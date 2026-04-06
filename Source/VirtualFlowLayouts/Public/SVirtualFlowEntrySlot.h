@@ -12,10 +12,10 @@
  * Lightweight input-routing wrapper placed around each realized entry widget.
  *
  * Widget hierarchy per realized item:
- *   SlotBox (SBox)            — controls the slot dimensions from the layout snapshot
- *     EntrySlot (this)        — detects clicks, hover, focus, navigation
- *       EntryContentBox       — applies entry alignment + min/max content constraints
- *         TakeWidget()        — the actual UUserWidget Slate representation
+ *   SlotBox (SBox)            controls the slot dimensions from the layout snapshot
+ *     EntrySlot (this)        detects clicks, hover, focus, navigation
+ *       EntryContentBox       applies entry alignment + min/max content constraints
+ *         TakeWidget()        the actual UUserWidget Slate representation
  *
  * Input routing:
  *  Clicks bubble up from the entry widget. If a child (e.g. a button) handles the
@@ -26,7 +26,7 @@
  *  Focus routing follows the entry widget's preferred focus target.
  *
  * Design note:
- *  This widget is pure Slate — it knows nothing about UMG, UObjects, or the owning
+ *  This widget is pure Slate, it knows nothing about UMG, UObjects, or the owning
  *  UVirtualFlowView. All communication back to the UMG layer happens through delegates
  *  set via SLATE_EVENT during construction. The UMG side captures any context it needs
  *  in the delegate bindings.

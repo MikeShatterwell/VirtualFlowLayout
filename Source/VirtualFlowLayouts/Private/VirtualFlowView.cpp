@@ -175,19 +175,12 @@ static bool DoesEntryClassSupportFocus(TSubclassOf<UUserWidget> EntryClass)
 				}
 			}
 			
-			static TMap<TWeakObjectPtr<UClass>, bool> ClassFocusCache;
-			if (const bool* bCached = ClassFocusCache.Find(EntryClass))
-			{
-				bHasFocusableDescendant = *bCached;
-			}
-			
 			if (const FBoolProperty* Prop = CastField<FBoolProperty>(
 					Widget->GetClass()->FindPropertyByName(TEXT("IsFocusable"))))
 			{
 				if (Prop->GetPropertyValue_InContainer(Widget))
 				{
 					bHasFocusableDescendant = true;
-					ClassFocusCache.Add(EntryClass, true);
 				}
 			}
 		});

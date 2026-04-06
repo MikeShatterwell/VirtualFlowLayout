@@ -39,7 +39,7 @@ public:
 	void ClampOffset(float MaxOffset);
 
 	/** Returns the current overscroll displacement in pixels. */
-	float GetOverscrollOffset(const FGeometry& ViewportGeometry) const;
+	float GetOverscrollOffset(const FGeometry& ViewportGeometry, bool bIsHorizontal = false) const;
 
 	// --- Physics ---
 
@@ -118,7 +118,7 @@ public:
 	// --- Inertial scroll queries (used by parent for idle-state decisions) ---
 
 	bool HasInertialVelocity() const;
-	bool HasOverscroll(const FGeometry& ViewportGeometry) const;
+	bool HasOverscroll(const FGeometry& ViewportGeometry, const bool bIsHorizontal = false) const;
 
 private:
 	// --- Scroll position ---

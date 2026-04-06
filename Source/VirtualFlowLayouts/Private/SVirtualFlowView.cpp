@@ -1029,16 +1029,6 @@ UObject* SVirtualFlowView::FindAdjacentItemInSelectableOrder(UObject* CurrentIte
 
 bool SVirtualFlowView::ComputeVolatility() const
 {
-	// PERF: A volatile widget forces *every* descendant onto PaintSlowPath.
-	// With many realized items this is catastrophically expensive.  All
-	// runtime visual changes (scroll transform, slot resize, entry
-	// interpolation transforms, opacity) already go through Slate's
-	// invalidation system via SetRenderTransform / SetRenderOpacity /
-	// SetWidthOverride / AddSlot / RemoveSlot, so the subtree never needs
-	// blanket volatility at runtime.
-	//
-	// The only case that requires true volatility is the UMG Designer
-	// overlay, which paints custom elements directly in OnPaint.
 #if WITH_EDITOR
 	if (OwnerWidget.IsValid()
 		&& OwnerWidget->IsDesignTime()
@@ -1497,7 +1487,7 @@ void SVirtualFlowView::AdvanceScrollState(const FGeometry& AllottedGeometry, con
 
 	// When physics are idle, handle snap convergence and smooth-scroll interpolation
 	const bool bPhysicsIdle = !ScrollController.IsPointerPanning()
-		&& !ScrollController.HasOverscroll(ScrollGeometry)
+		&& !ScrollController.HasOverscroll(ScrollGeometry, Axes.bHorizontal)
 		&& !ScrollController.HasInertialVelocity();
 
 	if (bPhysicsIdle)
@@ -2164,21 +2154,12 @@ void SVirtualFlowView::RebuildFlattenedModel()
 	{
 		UE_LOG(LogVirtualFlowLayout, Verbose, TEXT("[%hs] Item data cache is dirty, clearing %d layouts and %d children entries"),
 			__FUNCTION__, ItemDataCache.Layouts.Num(), ItemDataCache.Children.Num());
-		// Compact stale keys
-		for (auto It = ItemDataCache.Layouts.CreateIterator(); It; ++It)
-		{
-			if (!It.Key().IsValid())
-			{
-				It.RemoveCurrent();
-			}
-		}
-		for (auto It = ItemDataCache.Children.CreateIterator(); It; ++It)
-		{
-			if (!It.Key().IsValid())
-			{
-				It.RemoveCurrent();
-			}
-		}
+
+		ItemDataCache.Layouts.Reset();
+		ItemDataCache.Children.Reset();
+		ItemDataCache.bDirty = false;
+
+		// Compact stale keys from measurement caches
 		for (auto It = LayoutCache.MeasuredItemHeights.CreateIterator(); It; ++It)
 		{
 			if (!It.Key().IsValid())
@@ -2193,9 +2174,6 @@ void SVirtualFlowView::RebuildFlattenedModel()
 				It.RemoveCurrent();
 			}
 		}
-		ItemDataCache.Layouts.Reset();
-		ItemDataCache.Children.Reset();
-		ItemDataCache.bDirty = false;
 	}
 
 	OwnerWidget->BuildDisplayModel(FlattenedModel, ItemDataCache.Layouts, ItemDataCache.Children);
@@ -3034,7 +3012,7 @@ float SVirtualFlowView::GetOverscrollOffset() const
 	}
 
 	const FGeometry& ViewportGeometry = ViewportBorder->GetCachedGeometry();
-	return ScrollController.GetOverscrollOffset(ViewportGeometry);
+	return ScrollController.GetOverscrollOffset(ViewportGeometry, Axes.bHorizontal);
 }
 
 float SVirtualFlowView::GetVisualScrollOffset() const
@@ -3784,6 +3762,11 @@ FNavigationReply SVirtualFlowView::OnNavigation(const FGeometry& MyGeometry, con
 	// Simulation shouldn't execute scroll/focus side effects.
 	if (bIsSimulation)
 	{
+		const UUserWidget* TargetWidget = OwnerWidget->GetFirstWidgetForItem(TargetItem);
+		if (IsValid(TargetWidget))
+		{
+			return FNavigationReply::Explicit(TargetWidget->GetCachedWidget());
+		}
 		return FNavigationReply::Custom(FNavigationDelegate());
 	}
 
@@ -4049,23 +4032,6 @@ float SVirtualFlowView::ComputeSnapOffset(const float CurrentOffset, const EVirt
 	if (BestDistance < FLT_MAX)
 	{
 		return BestSnapOffset;
-	}
-
-	// Fallback: linear scan
-	for (const int32 SnapshotIndex : Layout.IndicesByTop)
-	{
-		if (!IsSnapCandidate(SnapshotIndex))
-		{
-			continue;
-		}
-
-		const float ItemSnapOffset = FMath::Clamp(ComputeTargetScrollOffsetForItem(SnapshotIndex, Destination), 0.0f, GetMaxScrollOffset());
-		const float Distance = FMath::Abs(ItemSnapOffset - CurrentOffset);
-		if (Distance < BestDistance)
-		{
-			BestDistance = Distance;
-			BestSnapOffset = ItemSnapOffset;
-		}
 	}
 
 	return BestDistance < FLT_MAX ? BestSnapOffset : CurrentOffset;

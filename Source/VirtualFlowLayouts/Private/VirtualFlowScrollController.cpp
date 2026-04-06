@@ -12,9 +12,12 @@ void FVirtualFlowScrollController::ClampOffset(const float MaxOffset)
 	TargetOffsetPx = FMath::Clamp(TargetOffsetPx, 0.0f, MaxOffset);
 }
 
-float FVirtualFlowScrollController::GetOverscrollOffset(const FGeometry& ViewportGeometry) const
+float FVirtualFlowScrollController::GetOverscrollOffset(const FGeometry& ViewportGeometry, const bool bIsHorizontal) const
 {
-	return ViewportGeometry.GetLocalSize().Y > 0.0f
+	const float MainExtent = bIsHorizontal
+		? ViewportGeometry.GetLocalSize().X
+		: ViewportGeometry.GetLocalSize().Y;
+	return MainExtent > 0.0f
 		? Overscroll.GetOverscroll(ViewportGeometry)
 		: 0.0f;
 }
@@ -222,7 +225,7 @@ bool FVirtualFlowScrollController::HasInertialVelocity() const
 	return !FMath::IsNearlyZero(InertialScrollManager.GetScrollVelocity(), 0.1f);
 }
 
-bool FVirtualFlowScrollController::HasOverscroll(const FGeometry& ViewportGeometry) const
+bool FVirtualFlowScrollController::HasOverscroll(const FGeometry& ViewportGeometry, const bool bIsHorizontal) const
 {
-	return !FMath::IsNearlyZero(GetOverscrollOffset(ViewportGeometry), 0.1f);
+	return !FMath::IsNearlyZero(GetOverscrollOffset(ViewportGeometry, bIsHorizontal), 0.1f);
 }

@@ -39,12 +39,10 @@ FReply SVirtualFlowEntrySlot::OnMouseButtonDoubleClick(const FGeometry& MyGeomet
 
 void SVirtualFlowEntrySlot::OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-	SCompoundWidget::OnMouseEnter(MyGeometry, MouseEvent);
 	(void)OnSlotHoverChanged.ExecuteIfBound(/*bHovered*/ true);
 }
 
 void SVirtualFlowEntrySlot::OnMouseLeave(const FPointerEvent& MouseEvent)
 {
-	SCompoundWidget::OnMouseLeave(MouseEvent);
 	(void)OnSlotHoverChanged.ExecuteIfBound(/*bHovered*/ false);
 }
