@@ -5,6 +5,7 @@
 // Core
 #include <Math/RandomStream.h>
 #if WITH_EDITOR
+#include <Editor.h>
 #include <Logging/MessageLog.h>
 #include <Logging/TokenizedMessage.h>
 #endif
@@ -17,6 +18,7 @@
 
 // Slate
 #include <Framework/Application/SlateApplication.h>
+#include <Widgets/Layout/SBox.h>
 
 // SlateCore
 #include <Styling/UMGCoreStyle.h>

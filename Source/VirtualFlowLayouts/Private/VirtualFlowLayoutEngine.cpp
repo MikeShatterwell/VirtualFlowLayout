@@ -602,7 +602,7 @@ void UTileLayoutEngine::BuildLayout_Implementation(
 		
 		// Row Spanning expands the height by N rows and includes the vertical gutters between them
 		const int32 RSpan = FMath::Max(1, Layout.RowSpan);
-		EVirtualFlowHeightSource HeightSource;
+		EVirtualFlowHeightSource HeightSource = EVirtualFlowHeightSource::Measured;
 		const float BaseItemHeight = (TileSize.Y > 0.0f && !Layout.bFullRow) ? TileSize.Y : EstimatePaddedHeight(DisplayItem, ItemWidth, Context, &HeightSource);
 		if (TileSize.Y > 0.0f && !Layout.bFullRow)
 		{

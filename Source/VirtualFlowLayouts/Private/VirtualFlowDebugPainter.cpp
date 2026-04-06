@@ -799,13 +799,6 @@ void FVirtualFlowDebugPainter::PaintDesignerOverlay(
 			const FVirtualFlowPlacedItem& Placed = Layout.Items[i];
 			const FVector2D ItemLocal = ItemLocalPos(Placed);
 
-			// Cull off-screen items
-			const float MainCoord = bHoriz ? ItemLocal.X : ItemLocal.Y;
-			if (MainCoord < -500.0f || MainCoord > ScreenMainExtent + 500.0f)
-			{
-				continue;
-			}
-
 			const FVector2D ItemSize = ItemLocalSize(Placed);
 			const bool bRealized = Params.RealizedIndices.Contains(i);
 

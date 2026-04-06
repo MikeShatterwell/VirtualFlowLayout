@@ -7,9 +7,11 @@
 
 // CoreUObject
 #include <UObject/Interface.h>
+#include <Templates/SubclassOf.h>
 
 // SlateCore
 #include <Types/SlateEnums.h>
+#include <Layout/Margin.h>
 
 #include "VirtualFlowItem.generated.h"
 

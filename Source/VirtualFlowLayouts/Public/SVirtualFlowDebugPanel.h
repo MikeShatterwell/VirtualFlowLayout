@@ -9,6 +9,9 @@
 // Slate
 #include <Widgets/SCompoundWidget.h>
 
+// UMG
+#include <Components/VerticalBox.h>
+
 // Internal
 #include "SVirtualFlowView.h"
 #include "VirtualFlowView.h"

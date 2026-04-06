@@ -11,14 +11,15 @@
 // Slate
 #include <Framework/Application/NavigationConfig.h>
 #include <Framework/Application/SlateApplication.h>
-
-// Engine
-#include <Engine/LocalPlayer.h>
 #include <Widgets/Layout/SBorder.h>
 #include <Widgets/Layout/SBox.h>
 #include <Widgets/Layout/SConstraintCanvas.h>
 #include <Widgets/Layout/SScrollBar.h>
 #include <Widgets/SBoxPanel.h>
+
+// Engine
+#include <Engine/LocalPlayer.h>
+#include <Engine/GameInstance.h>
 
 // SlateCore
 #include <Input/Events.h>

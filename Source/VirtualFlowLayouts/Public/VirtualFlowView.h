@@ -140,7 +140,7 @@ public:
 	// --- Item management ---
 
 	/** Replaces the root item list and requests a full rebuild. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintCallable, Category = "Virtual Flow", meta = (ViewmodelBlueprintWidgetExtension = "EntryViewModel"))
 	void SetListItems(const TArray<UObject*>& InItems);
 
 	/** Appends a single item to the root list and requests a rebuild. */
@@ -334,6 +334,7 @@ public:
 	// --- Getters ---
 
 	EVirtualFlowSelectionMode GetSelectionMode() const { return SelectionMode; }
+	TSubclassOf<UUserWidget> GetEntryWidgetClass() const { return EntryWidgetClass; }
 	bool GetSelectOnClick() const { return bSelectOnClick; }
 	bool GetSelectOnFocus() const { return bSelectOnFocus; }
 	bool GetSelectOnFocusClearsExistingSelection() const { return bSelectOnFocusClearsExistingSelection; }
@@ -731,7 +732,7 @@ private:
 
 	/** When true, scroll-to-item and wheel scroll animate smoothly instead of snapping. */
 	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Scrolling")
-	bool bSmoothScrollEnabled = false;
+	bool bSmoothScrollEnabled = true;
 
 	/** Interpolation speed for smooth scrolling (higher = faster convergence). */
 	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Scrolling", meta = (ClampMin = 1.0, ClampMax = 60.0, EditCondition = "bSmoothScrollEnabled"))

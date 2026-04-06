@@ -7,6 +7,7 @@
 
 // SlateCore
 #include <Layout/Margin.h>
+#include <Widgets/SWidget.h>
 
 struct FVirtualFlowHeightStats;
 struct FVirtualFlowLayoutSnapshot;
