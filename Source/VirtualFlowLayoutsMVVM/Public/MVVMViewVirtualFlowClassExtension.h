@@ -5,6 +5,9 @@
 // Core
 #include <CoreMinimal.h>
 
+// CoreUObject
+#include <UObject/ObjectKey.h>
+
 #if VIRTUALFLOW_WITH_MVVM
 #include <Extensions/MVVMViewClassExtension.h>
 #include <Bindings/MVVMCompiledBindingLibrary.h>
