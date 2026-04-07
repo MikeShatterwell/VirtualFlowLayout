@@ -10,11 +10,26 @@
 			"Name": "VirtualFlowLayouts",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "VirtualFlowLayoutsMVVM",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "VirtualFlowLayoutsMVVM",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
 		}
 	],
 	"Plugins": [
 		{
 			"Name": "InputFlowDebugger",
+			"Enabled": true,
+			"Optional": true
+		},
+		{
+			"Name": "ModelViewViewModel",
 			"Enabled": true,
 			"Optional": true
 		}

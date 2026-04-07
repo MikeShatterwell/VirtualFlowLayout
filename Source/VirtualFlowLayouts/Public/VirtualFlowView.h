@@ -34,8 +34,11 @@ class UVirtualFlowPreviewItem;
 UENUM(BlueprintType)
 enum class EVirtualFlowDesignerPreviewDataSource : uint8
 {
+	// Randomly generated items of the desired preview item class
 	GeneratedFakeData UMETA(DisplayName = "Generated Fake Data"),
+	// Statically defined items in the preview array
 	StaticPreviewItems UMETA(DisplayName = "Static Preview Items"),
+	// Returned data from GetDesignerPreviewItems
 	BlueprintFunction UMETA(DisplayName = "Blueprint Function")
 };
 
@@ -52,7 +55,7 @@ struct FVirtualFlowMinimapStyle
 	bool bIsMinimapEnabled = false;
 
 	// The width of the minimap in pixels.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (ClampMin = 20.0, ClampMax = 400.0, EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (ClampMin = 20.0, ClampMax = 400.0, EditCondition = "bIsMinimapEnabled"))
 	float Width = 80.0f;
 
 	// The zoom level of the minimap, controlling how much the content is scaled down when rendered.
@@ -60,47 +63,47 @@ struct FVirtualFlowMinimapStyle
 	float ContentScale = 1.0f;
 
 	// Whether to hide the default non-minimap scroll bar
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bIsMinimapEnabled"))
 	bool bHideScrollBar = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bIsMinimapEnabled"))
 	FLinearColor BackgroundColor = FLinearColor(0.08f, 0.08f, 0.12f, 0.9f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bIsMinimapEnabled"))
 	FLinearColor ItemColor = FLinearColor(0.4f, 0.55f, 0.7f, 0.65f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bIsMinimapEnabled"))
 	FLinearColor FullRowItemColor = FLinearColor(0.5f, 0.65f, 0.75f, 0.45f);
 
 	// Color for the currently selected item (if any). Overrides other colors
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bIsMinimapEnabled"))
 	FLinearColor SelectedItemColor = FLinearColor(0.95f, 0.75f, 0.25f, 0.85f);
 
 	// Color for non-full-row items that are currently realized (have a live widget).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bIsMinimapEnabled"))
 	FLinearColor RealizedItemColor = FLinearColor(0.35f, 0.55f, 0.85f, 0.85f);
 
 	// Color for full-row items that are currently realized.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bIsMinimapEnabled"))
 	FLinearColor FullRowRealizedItemColor = FLinearColor(0.30f, 0.50f, 0.75f, 0.85f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bIsMinimapEnabled"))
 	FLinearColor ViewportIndicatorColor = FLinearColor(1.0f, 1.0f, 1.0f, 0.12f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bIsMinimapEnabled"))
 	FLinearColor HoverIndicatorColor = FLinearColor(1.0f, 1.0f, 1.0f, 0.06f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (EditCondition = "bIsMinimapEnabled"))
 	FLinearColor ViewportBorderColor = FLinearColor(1.0f, 1.0f, 1.0f, 0.3f);
 
 	// Amount to darken item colors per level of depth in the layout hierarchy.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (ClampMin = 0.0, ClampMax = 0.8, EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (ClampMin = 0.0, ClampMax = 0.8, EditCondition = "bIsMinimapEnabled"))
 	float DepthDarkenStep = 0.1f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (ClampMin = 0.0, ClampMax = 4.0, EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (ClampMin = 0.0, ClampMax = 4.0, EditCondition = "bIsMinimapEnabled"))
 	float ItemGap = 1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (ClampMin = 0.5, ClampMax = 4.0, EditCondition = "bEnabled"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Minimap", meta = (ClampMin = 0.5, ClampMax = 4.0, EditCondition = "bIsMinimapEnabled"))
 	float ItemMinHeight = 1.0f;
 };
 
@@ -124,7 +127,7 @@ DECLARE_DYNAMIC_DELEGATE_RetVal(TArray<UObject*>, FOnGetDesignerPreviewItems);
  * UVirtualFlowLayoutEngine subclass to change the arrangement algorithm.
  * Custom engines can be created in C++ or Blueprint.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta=(PrioritizeCategories="VirtualFlow"))
 class VIRTUALFLOWLAYOUTS_API UVirtualFlowView : public UWidget
 {
 	GENERATED_BODY()
@@ -140,194 +143,194 @@ public:
 	// --- Item management ---
 
 	/** Replaces the root item list and requests a full rebuild. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow", meta = (ViewmodelBlueprintWidgetExtension = "EntryViewModel"))
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow", meta = (ViewmodelBlueprintWidgetExtension = "EntryViewModel"))
 	void SetListItems(const TArray<UObject*>& InItems);
 
 	/** Appends a single item to the root list and requests a rebuild. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow")
 	void AddListItem(UObject* InItem);
 
 	/** Removes a single item from the root list and requests a rebuild. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow")
 	void RemoveListItem(UObject* InItem);
 
 	/** Removes all root items, clears selection, and requests a rebuild. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow")
 	void ClearListItems();
 
 	// --- Invalidation / refresh ---
 
 	/** Rebuilds displayed items and layout. Reuses cached entry measurements (call RequestRemeasureAll to refresh those). */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow")
 	void RequestRefresh();
 
 	/** Discards all cached entry measurements and rebuilds layout from estimates. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow")
 	void RequestRemeasureAll();
 
 	/** Discards the cached measurement for a specific item and refreshes the layout. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow")
 	void RequestRemeasureItem(UObject* InItem);
 
 	// --- Designer preview ---
 
 	/** Returns true when the widget is in the UMG designer and using generated or static preview data. */
-	UFUNCTION(BlueprintPure, Category = "Virtual Flow|Preview")
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Preview")
 	bool IsUsingDesignerPreviewItems() const;
 
 	/** Regenerates editor-only preview items using the current preview settings and seed. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Preview")
+	UFUNCTION(BlueprintCallable, Category = "VirtulFlow|Preview")
 	void RegenerateDesignerPreview();
 
 	/** Expands or collapses all designer preview section headers. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Preview")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Preview")
 	void SetDesignerPreviewSectionsExpanded(bool bExpanded);
 
 	// --- Selection ---
 
 	/** Selects a single item, clearing any incompatible prior selection according to SelectionMode. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Selection")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Selection")
 	void SetSelectedItem(UObject* InItem, EVirtualFlowInteractionSource InSource = EVirtualFlowInteractionSource::Code);
 
 	/** Adds or removes an item from the current selection set. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Selection")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Selection")
 	void SetItemSelected(UObject* InItem, bool bSelected, EVirtualFlowInteractionSource InSource = EVirtualFlowInteractionSource::Code);
 
 	/** Replaces the entire selection with the given items, respecting SelectionMode. Broadcasts per-item change events. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Selection")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Selection")
 	void SetSelectedItems(const TArray<UObject*>& InItems, EVirtualFlowInteractionSource InSource = EVirtualFlowInteractionSource::Code);
 
 	/** Clears the current selection state and updates all realized widgets. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Selection")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Selection")
 	void ClearSelection(EVirtualFlowInteractionSource InSource = EVirtualFlowInteractionSource::Code);
 
 	/** Returns true if the item is in the current selection set. */
-	UFUNCTION(BlueprintPure, Category = "Virtual Flow|Selection")
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Selection")
 	bool IsItemSelected(UObject* InItem) const;
 
 	/** Returns the first item in the selection array, or nullptr if nothing is selected. */
-	UFUNCTION(BlueprintPure, Category = "Virtual Flow|Selection")
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Selection")
 	UObject* GetFirstSelectedItem() const;
 
 	/** Returns a copy of all currently selected items (excludes stale/null entries). */
-	UFUNCTION(BlueprintPure, Category = "Virtual Flow|Selection")
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Selection")
 	TArray<UObject*> GetSelectedItems() const;
 
 	/** Programmatically navigates selection in the given direction, selecting and focusing the next item. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Selection")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Selection")
 	bool NavigateSelection(EUINavigation Direction);
 
 	// --- Expansion ---
 
 	/** Returns true if the item has children and a non-None ChildrenPresentation. */
-	UFUNCTION(BlueprintPure, Category = "Virtual Flow|Expansion")
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Expansion")
 	bool CanItemExpand(UObject* InItem) const;
 
 	/** Returns true if the item is currently expanded (has visible children). */
-	UFUNCTION(BlueprintPure, Category = "Virtual Flow|Expansion")
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Expansion")
 	bool IsItemExpanded(UObject* InItem) const;
 
 	/** Expands or collapses an item if it exposes children. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Expansion")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Expansion")
 	void SetItemExpanded(UObject* InItem, bool bExpanded, EVirtualFlowInteractionSource InSource = EVirtualFlowInteractionSource::Code);
 
 	/** Toggles the expansion state of an item. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Expansion")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Expansion")
 	void ToggleItemExpanded(UObject* InItem, EVirtualFlowInteractionSource InSource = EVirtualFlowInteractionSource::Mouse);
 
 	/** Expands every expandable item in the hierarchy. Applies overrides in bulk and rebuilds once. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Expansion")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Expansion")
 	void ExpandAll(EVirtualFlowInteractionSource InSource = EVirtualFlowInteractionSource::Code);
 
 	/** Collapses every expanded item. Applies overrides in bulk and rebuilds once. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Expansion")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Expansion")
 	void CollapseAll(EVirtualFlowInteractionSource InSource = EVirtualFlowInteractionSource::Code);
 
 	// --- Scrolling / focus ---
 
 	/** Scrolls the view so the target item becomes visible, expanding its ancestors if needed. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Scrolling")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Scrolling")
 	bool ScrollItemIntoView(UObject* InItem, EVirtualFlowScrollDestination Destination = EVirtualFlowScrollDestination::Nearest);
 
 	/** Scrolls to and focuses the first realized widget associated with the target item. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Focus")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Focus")
 	bool FocusItem(UObject* InItem, EVirtualFlowScrollDestination Destination = EVirtualFlowScrollDestination::Center);
 
 	/** Sets the absolute scroll offset in pixels, clamping to legal bounds. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Scrolling")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Scrolling")
 	void SetScrollOffset(float InScrollOffsetPx);
 
 	/** Returns the current clamped scroll offset in pixels. */
-	UFUNCTION(BlueprintPure, Category = "Virtual Flow|Scrolling")
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Scrolling")
 	float GetScrollOffset() const;
 
 	// --- Queries (layout, hierarchy, realized widgets) ---
 
 	/** Returns the configured column count (the NumColumns property). */
-	UFUNCTION(BlueprintPure, Category = "Virtual Flow|Layout")
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Layout")
 	int32 GetConfiguredNumColumns() const { return NumColumns; }
 
 	/** Returns the configured column spacing in pixels. */
-	UFUNCTION(BlueprintPure, Category = "Virtual Flow|Layout")
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Layout")
 	float GetConfiguredColumnSpacing() const { return ColumnSpacing; }
 
 	/** Resolves the effective layout metadata for an item using interface data or class defaults. */
-	UFUNCTION(BlueprintPure, Category = "Virtual Flow")
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow")
 	FVirtualFlowItemLayout GetResolvedFlowItemLayout(UObject* InItem) const;
 
 	/** Returns the current logical children for an item, regardless of whether it is expanded. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow")
 	void GetFlowItemChildren(UObject* InItem, TArray<UObject*>& OutChildren) const;
 
 	/** Recursively gathers all descendants of an item (children, grandchildren, etc.). */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Hierarchy")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Hierarchy")
 	void GetItemDescendants(UObject* InItem, TArray<UObject*>& OutDescendants) const;
 
 	/** Returns the parent item in the hierarchy, or nullptr for root items. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Hierarchy")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Hierarchy")
 	UObject* GetParentItem(UObject* InItem);
 
 	/** Returns the first currently realized entry widget for an item, if any. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow")
 	UUserWidget* GetFirstWidgetForItem(UObject* InItem) const;
 
 	/** Returns all currently realized entry widgets for an item. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow")
 	TArray<UUserWidget*> GetDisplayedWidgetsForItem(UObject* InItem) const;
 
 	/** Returns all currently realized entry widgets across all items. */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow")
 	TArray<UUserWidget*> GetDisplayedEntryWidgets() const;
 
 	// --- Layout engine access ---
 
 	/** Returns the layout engine that will be used for the next layout build. */
-	UFUNCTION(BlueprintPure, Category = "Virtual Flow|Layout")
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Layout")
 	UVirtualFlowLayoutEngine* GetLayoutEngine() const;
 
 	/**
 	 * Replaces the layout engine at runtime. The new engine is outer'd to this view.
 	 * Triggers a full layout rebuild.
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Layout")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Layout")
 	void SetLayoutEngine(UVirtualFlowLayoutEngine* InEngine);
 
 	/**
 	 * Creates and assigns a new layout engine of the given class.
 	 * The engine is outer'd to this view as a transient instanced subobject.
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Layout")
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Layout")
 	UVirtualFlowLayoutEngine* SetLayoutEngineClass(TSubclassOf<UVirtualFlowLayoutEngine> InClass);
 
 	// --- Blueprint NativeEvent fallbacks ---
 
 	/** Blueprint fallback used when an item does not implement IVirtualFlowItem. */
-	UFUNCTION(BlueprintNativeEvent, Category = "Virtual Flow")
+	UFUNCTION(BlueprintNativeEvent, Category = "VirtualFlow")
 	FVirtualFlowItemLayout GetDefaultItemLayoutForItem(UObject* InItem) const;
 	virtual FVirtualFlowItemLayout GetDefaultItemLayoutForItem_Implementation(UObject* InItem) const;
 
 	/** Blueprint fallback used when an item does not implement IVirtualFlowItem child enumeration. */
-	UFUNCTION(BlueprintNativeEvent, Category = "Virtual Flow")
+	UFUNCTION(BlueprintNativeEvent, Category = "VirtualFlow")
 	void GetDefaultItemChildrenForItem(UObject* InItem, TArray<UObject*>& OutChildren) const;
 	virtual void GetDefaultItemChildrenForItem_Implementation(UObject* InItem, TArray<UObject*>& OutChildren) const;
 
@@ -377,28 +380,28 @@ public:
 
 	// --- Events ---
 
-	UPROPERTY(BlueprintAssignable, Category = "Virtual Flow|Events")
+	UPROPERTY(BlueprintAssignable, Category = "VirtualFlow|Events")
 	FOnVirtualFlowItemWidgetEvent OnItemWidgetGenerated;
 
-	UPROPERTY(BlueprintAssignable, Category = "Virtual Flow|Events")
+	UPROPERTY(BlueprintAssignable, Category = "VirtualFlow|Events")
 	FOnVirtualFlowItemWidgetEvent OnItemWidgetReleased;
 
-	UPROPERTY(BlueprintAssignable, Category = "Virtual Flow|Events")
+	UPROPERTY(BlueprintAssignable, Category = "VirtualFlow|Events")
 	FOnVirtualFlowItemWidgetEvent OnItemClicked;
 
-	UPROPERTY(BlueprintAssignable, Category = "Virtual Flow|Events")
+	UPROPERTY(BlueprintAssignable, Category = "VirtualFlow|Events")
 	FOnVirtualFlowItemWidgetEvent OnItemDoubleClicked;
 
-	UPROPERTY(BlueprintAssignable, Category = "Virtual Flow|Events")
+	UPROPERTY(BlueprintAssignable, Category = "VirtualFlow|Events")
 	FOnVirtualFlowItemWidgetEvent OnItemFocused;
 
-	UPROPERTY(BlueprintAssignable, Category = "Virtual Flow|Events")
+	UPROPERTY(BlueprintAssignable, Category = "VirtualFlow|Events")
 	FOnVirtualFlowItemHoverEvent OnItemHoveredChanged;
 
-	UPROPERTY(BlueprintAssignable, Category = "Virtual Flow|Events")
+	UPROPERTY(BlueprintAssignable, Category = "VirtualFlow|Events")
 	FOnVirtualFlowItemSelectionEvent OnItemSelectionChanged;
 
-	UPROPERTY(BlueprintAssignable, Category = "Virtual Flow|Events")
+	UPROPERTY(BlueprintAssignable, Category = "VirtualFlow|Events")
 	FOnVirtualFlowItemExpansionEvent OnItemExpansionChanged;
 
 	// --- Interaction handlers (called by SVirtualFlowEntrySlot) ---
@@ -546,8 +549,7 @@ private:
 	void ValidateNestedViewConfiguration() const;
 #endif
 
-private:
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Entries", meta=(DesignerRebuild))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Entries", meta=(DesignerRebuild, MustImplement = "/Script/VirtualFlowLayouts.VirtualFlowEntryWidgetInterface"))
 	TSubclassOf<UUserWidget> EntryWidgetClass;
 
 	/**
@@ -562,19 +564,19 @@ private:
 	 * Each engine subclass exposes its own tuning parameters inline. Custom engines
 	 * can be created in C++ or Blueprint by subclassing UVirtualFlowLayoutEngine.
 	 */
-	UPROPERTY(EditAnywhere, Instanced, Category = "Virtual Flow|Layout")
+	UPROPERTY(EditAnywhere, Instanced, Category = "VirtualFlow|Layout")
 	TObjectPtr<UVirtualFlowLayoutEngine> LayoutEngine;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview")
 	bool bUseDesignerPreviewItems = true;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview")
 	TSubclassOf<UVirtualFlowPreviewItem> DesignerPreviewItemClass = UVirtualFlowPreviewItem::StaticClass();
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview")
 	EVirtualFlowDesignerPreviewDataSource DesignerPreviewDataSource = EVirtualFlowDesignerPreviewDataSource::GeneratedFakeData;
 
-	UPROPERTY(EditAnywhere, Instanced, Category = "Virtual Flow|Preview", meta = (EditCondition = "DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::StaticPreviewItems", EditConditionHides))
+	UPROPERTY(EditAnywhere, Instanced, Category = "VirtualFlow|Preview", meta = (EditCondition = "DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::StaticPreviewItems", EditConditionHides))
 	TArray<TObjectPtr<UVirtualFlowPreviewItem>> DesignerPreviewStaticRootItems;
 
 	/**
@@ -582,66 +584,66 @@ private:
 	 * Only used when DesignerPreviewDataSource is set to BlueprintFunction.
 	 * Bind a function that returns TArray<UObject*> to populate the preview.
 	 */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview", meta = (IsBindableEvent = "True", EditCondition = "DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::BlueprintFunction", EditConditionHides))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview|Data Source", 
+		meta = (IsBindableEvent = "True", 
+				EditCondition = "DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::BlueprintFunction", 
+				EditConditionHides))
 	FOnGetDesignerPreviewItems GetDesignerPreviewItems;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview", meta = (ClampMin = 0, ClampMax = 256))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (ClampMin = 0, ClampMax = 256, EditCondition = "DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::GeneratedFakeData", EditConditionHides))
 	int32 NumDesignerPreviewEntries = 18;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (EditCondition = "DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::GeneratedFakeData", EditConditionHides))
 	bool bDesignerPreviewUseGroups = true;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview", meta = (EditCondition = "bDesignerPreviewUseGroups"))
-	bool bDesignerPreviewGroupsExpandable = true;
-
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview", meta = (EditCondition = "bDesignerPreviewUseGroups && bDesignerPreviewGroupsExpandable"))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (EditCondition = "bDesignerPreviewUseGroups && bDesignerPreviewGroupsExpandable && DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::GeneratedFakeData"))
 	bool bDesignerPreviewGroupsStartExpanded = true;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (EditCondition = "DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::GeneratedFakeData", EditConditionHides))
 	bool bDesignerPreviewRandomizeItemSizes = true;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview", meta = (ClampMin = 0, ClampMax = 32))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (ClampMin = 0, ClampMax = 32, EditCondition = "DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::GeneratedFakeData", EditConditionHides))
 	int32 DesignerPreviewSectionCount = 0;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview", meta = (ClampMin = 1, ClampMax = 32))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (ClampMin = 1, ClampMax = 32, EditCondition = "DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::GeneratedFakeData", EditConditionHides))
 	int32 DesignerPreviewItemsPerSection = 6;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (EditCondition = "DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::GeneratedFakeData", EditConditionHides))
 	bool bDesignerPreviewUseMixedSpans = true;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (EditCondition = "DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::GeneratedFakeData", EditConditionHides))
 	int32 DesignerPreviewSeed = 1234;
 
 	/** The absolute scroll offset to apply when previewing the layout in the UMG designer. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview", meta = (ClampMin = 0.0, UIMin = 0.0, UIMax = 2000.0, SupportDynamicSliderMaxValue = "true"))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (ClampMin = 0.0, UIMin = 0.0, UIMax = 2000.0, SupportDynamicSliderMaxValue = "true"))
 	float DesignerPreviewScrollOffset = 0.0f;
 
 	/**
 	 * When enabled, paints a lightweight debug overlay directly onto the
 	 * designer preview.
 	 */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview")
 	bool bShowDesignerDebugOverlay = false;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview", meta=(DesignerRebuild))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Entries", meta=(DesignerRebuild, MustImplement = "/Script/VirtualFlowLayouts.VirtualFlowEntryWidgetInterface"))
 	TSubclassOf<UUserWidget> DesignerPreviewHeaderEntryWidgetClass;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Preview", meta=(DesignerRebuild))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Entries", meta=(DesignerRebuild, MustImplement = "/Script/VirtualFlowLayouts.VirtualFlowEntryWidgetInterface"))
 	TSubclassOf<UUserWidget> DesignerPreviewLeafEntryWidgetClass;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Selection")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Selection")
 	EVirtualFlowSelectionMode SelectionMode = EVirtualFlowSelectionMode::Single;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Selection")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Selection")
 	bool bSelectOnClick = true;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Selection")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Selection")
 	bool bSelectOnFocus = true;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Selection")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Selection")
 	bool bSelectOnFocusClearsExistingSelection = true;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Selection")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Selection")
 	bool bToggleSelectionOnClickInMultiSelect = true;
 
 	/**
@@ -649,7 +651,7 @@ private:
 	 * (the topmost parent in the chain) for unified cross-view selection.
 	 * Only relevant when this view is nested inside the entry widget of a parent view.
 	 */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Selection")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Selection")
 	bool bDelegateSelectionToParent = true;
 
 	/**
@@ -657,22 +659,22 @@ private:
 	 * so all views in the chain share a single pool of entry widgets.
 	 * Only relevant when this view is nested inside the entry widget of a parent view.
 	 */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Pool")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Pool")
 	bool bDelegatePoolToParent = true;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Expansion")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Expansion")
 	bool bAutoCollapseSiblingBranchesOnExpand = false;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Expansion")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Expansion")
 	bool bPreserveHiddenMultiSelectionOnCollapse = true;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Expansion")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Expansion")
 	bool bSelectCollapsingItemIfSingleSelectionBecomesHidden = true;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Expansion")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Expansion")
 	bool bFocusCollapsingItemIfFocusedDescendantBecomesHidden = true;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Focus")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus")
 	bool bFocusSelectedItemWhenVisible = true;
 
 	/**
@@ -685,13 +687,13 @@ private:
 	 * for entries larger than the safe area the near edge wins instead. Set to 0
 	 * to restore the default "just barely visible" Nearest behaviour.
 	 */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Focus", meta = (ClampMin = 0.0))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus", meta = (ClampMin = 0.0))
 	float NavigationScrollBuffer = 64.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Focus")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus")
 	bool bBridgeVirtualizedVerticalNavigation = true;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Focus")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus")
 	bool bBridgeVirtualizedHorizontalNavigation = true;
 
 	/**
@@ -701,53 +703,53 @@ private:
 	 * follow, which otherwise causes focus to target unrealized entries and get lost.
 	 * Set to 0 to disable rate limiting.
 	 */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Focus", meta = (ClampMin = 0.0, ClampMax = 1.0, UIMin = 0.0, UIMax = 0.5))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus", meta = (ClampMin = 0.0, ClampMax = 1.0, UIMin = 0.0, UIMax = 0.5))
 	float NavigationRepeatDelay = 0.12f;
 
 	/** Controls the primary scroll direction. Vertical scrolls top-to-bottom; Horizontal scrolls left-to-right. Layout engines always arrange items along the main axis. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Layout")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Layout")
 	EVirtualFlowOrientation Orientation = EVirtualFlowOrientation::Vertical;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Layout", meta = (ClampMin = 1))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Layout", meta = (ClampMin = 1))
 	int32 NumColumns = 4;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Layout", meta = (ClampMin = 0.0))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Layout", meta = (ClampMin = 0.0))
 	float ColumnSpacing = 12.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Layout", meta = (ClampMin = 0.0))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Layout", meta = (ClampMin = 0.0))
 	float LineSpacing = 12.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Layout")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Layout")
 	FMargin ContentPadding = FMargin(0.0f);
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Virtualization", meta = (ClampMin = 0.0))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Virtualization", meta = (ClampMin = 0.0))
 	float OverscanPx = 400.0f;
 
 	/** Default estimated entry size along the scroll axis (layout-space "height") used before measurement. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Virtualization", meta = (ClampMin = 1.0))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Virtualization", meta = (ClampMin = 1.0))
 	float DefaultEstimatedEntryHeight = 180.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Input", meta = (ClampMin = 0.0))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Input", meta = (ClampMin = 0.0))
 	float WheelScrollAmount = 96.0f;
 
 	/** When true, scroll-to-item and wheel scroll animate smoothly instead of snapping. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Scrolling")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Scrolling")
 	bool bSmoothScrollEnabled = true;
 
 	/** Interpolation speed for smooth scrolling (higher = faster convergence). */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Scrolling", meta = (ClampMin = 1.0, ClampMax = 60.0, EditCondition = "bSmoothScrollEnabled"))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Scrolling", meta = (ClampMin = 1.0, ClampMax = 60.0, EditCondition = "bSmoothScrollEnabled"))
 	float SmoothScrollSpeed = 12.0f;
 
 	/** Main-axis spacing between sections in sectioned layout modes. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Layout", meta = (ClampMin = 0.0))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Layout", meta = (ClampMin = 0.0))
 	float SectionSpacing = 32.0f;
 
 	/** When true, releasing the scroll wheel or touch drag will smoothly snap to the nearest row/section. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Scrolling")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Scrolling")
 	bool bEnableScrollSnapping = false;
 
 	/** Which part of the item should snap to the viewport when snapping is enabled. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Scrolling", meta = (EditCondition = "bEnableScrollSnapping"))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Scrolling", meta = (EditCondition = "bEnableScrollSnapping"))
 	EVirtualFlowScrollDestination ScrollSnapDestination = EVirtualFlowScrollDestination::Top;
 
 	float GetSectionSpacing() const { return SectionSpacing; }
@@ -762,7 +764,7 @@ private:
 	 * this from their UVirtualFlowEntryWidgetExtension to drive opacity, scale, or
 	 * any other visual treatment.
 	 */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Animation")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Animation")
 	bool bEnableViewportProximityFeedback = false;
 
 	/**
@@ -771,7 +773,7 @@ private:
 	 * linear falloff (1 - distance) is used. The curve lets designers shape the
 	 * transition -- e.g. hold full proximity for the center 60% then drop sharply.
 	 */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Animation",
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Animation",
 		meta = (EditCondition = "bEnableViewportProximityFeedback"))
 	TObjectPtr<UCurveFloat> ViewportProximityCurve;
 
@@ -781,44 +783,44 @@ private:
 	 * shortcut -- if entry widgets need finer control they can read ViewportProximity
 	 * from the extension directly and ignore this flag.
 	 */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Animation",
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Animation",
 		meta = (EditCondition = "bEnableViewportProximityFeedback"))
 	bool bAutoApplyProximityOpacity = false;
 
 	/** Floor opacity for the farthest entries when bAutoApplyProximityOpacity is on. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Animation",
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Animation",
 		meta = (ClampMin = 0.0, ClampMax = 1.0,
 				EditCondition = "bAutoApplyProximityOpacity"))
 	float ProximityOpacityMin = 0.3f;
 
 	/** When true, visible entries interpolate toward their new layout position after a reflow instead of snapping immediately. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Animation")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Animation")
 	bool bLayoutEntryInterpolationEnabled = false;
 
 	/** Interpolation speed used when animating entries toward their updated layout positions. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Animation", meta = (ClampMin = 1.0, ClampMax = 60.0, EditCondition = "bLayoutEntryInterpolationEnabled"))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Animation", meta = (ClampMin = 1.0, ClampMax = 60.0, EditCondition = "bLayoutEntryInterpolationEnabled"))
 	float LayoutEntryInterpolationSpeed = 12.0f;
 
 	/** Allow Up/Down keyboard navigation to scroll the view even when SelectionMode is None. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Input")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Input")
 	bool bAllowKeyboardScrollWithoutSelection = false;
 
 	/** Lines to scroll per keyboard press when scrolling without selection. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Input", meta = (ClampMin = 1.0, EditCondition = "bAllowKeyboardScrollWithoutSelection"))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Input", meta = (ClampMin = 1.0, EditCondition = "bAllowKeyboardScrollWithoutSelection"))
 	float KeyboardScrollLines = 3.0f;
 
 	/** When enabled, the gamepad right stick scrolls the view along the main scroll axis. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Input")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Input")
 	bool bEnableRightStickScrolling = false;
 
 	/** Scroll speed in pixels per second at full right stick deflection. */
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Input", meta = (ClampMin = 0.0, EditCondition = "bEnableRightStickScrolling"))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Input", meta = (ClampMin = 0.0, EditCondition = "bEnableRightStickScrolling"))
 	float RightStickScrollSpeed = 800.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Style")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Style")
 	FScrollBarStyle ScrollBarStyle;
 
-	UPROPERTY(EditAnywhere, Category = "Virtual Flow|Minimap")
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Minimap")
 	FVirtualFlowMinimapStyle MinimapStyle;
 
 	// --- Transient runtime state (not serialized) ---

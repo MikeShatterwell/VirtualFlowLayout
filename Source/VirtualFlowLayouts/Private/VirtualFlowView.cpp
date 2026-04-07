@@ -1949,10 +1949,7 @@ void UVirtualFlowView::ConfigurePreviewHeader(UVirtualFlowPreviewItem* Item, con
 	// Keep generated preview groups generic.
 	Layout.ChildrenPresentation = EVirtualFlowChildrenPresentation::InlineInFlow;
 
-	Layout.bChildrenExpanded = bDesignerPreviewGroupsExpandable
-		? bDesignerPreviewGroupsStartExpanded
-		: true;
-	Layout.bToggleExpansionOnClick = bDesignerPreviewGroupsExpandable;
+	Layout.bChildrenExpanded = bDesignerPreviewGroupsStartExpanded;
 
 	Item->PreviewLayout = Layout;
 }
