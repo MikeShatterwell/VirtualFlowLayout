@@ -9,7 +9,12 @@
 
 // ModelViewViewModel
 #include <View/MVVMView.h>
+#include <View/MVVMViewClass.h>
 #include <MVVMSubsystem.h>
+#include <Bindings/MVVMFieldPathHelper.h>
+#include <Types/MVVMFieldContext.h>
+#include <MVVMMessageLog.h>
+#include <Templates/ValueOrError.h>
 
 void UMVVMViewVirtualFlowClassExtension::Initialize(
 	const FName InWidgetName,
@@ -24,20 +29,51 @@ void UMVVMViewVirtualFlowClassExtension::Initialize(
 void UMVVMViewVirtualFlowClassExtension::OnSourcesInitialized(UUserWidget* UserWidget, UMVVMView* View,
 	UMVVMViewExtension* Extension)
 {
-	UVirtualFlowView* FlowView = Cast<UVirtualFlowView>(UserWidget);
-	if (IsValid(FlowView))
+	check(View->GetViewClass());
+	TValueOrError<UE::MVVM::FFieldContext, void> FieldPathResult = View->GetViewClass()->GetBindingLibrary().EvaluateFieldPath(UserWidget, WidgetPath);
+
+	if (FieldPathResult.HasValue())
 	{
-		FlowView->OnItemWidgetGenerated.AddDynamic(this, &ThisClass::HandleItemWidgetGenerated);
+		TValueOrError<UObject*, void> ObjectResult = UE::MVVM::FieldPathHelper::EvaluateObjectProperty(FieldPathResult.GetValue());
+		if (ObjectResult.HasValue() && ObjectResult.GetValue() != nullptr)
+		{
+			if (UVirtualFlowView* FlowView = Cast<UVirtualFlowView>(ObjectResult.GetValue()))
+			{
+				CachedFlowViewWidgets.Add(FObjectKey(View), FlowView);
+				FlowView->OnItemWidgetGenerated.AddDynamic(this, &ThisClass::HandleItemWidgetGenerated);
+			}
+			else
+			{
+				UE::MVVM::FMessageLog Log(UserWidget);
+				Log.Error(FText::Format(INVTEXT("The object property '{0}' is not of type UVirtualFlowView but has a ViewModel extension meant for VirtualFlowView widgets."),
+					FText::FromName(ObjectResult.GetValue()->GetFName())));
+			}
+		}
+		else
+		{
+			UE::MVVM::FMessageLog Log(UserWidget);
+			Log.Error(FText::Format(INVTEXT("The property object for VirtualFlowView widget '{0}' was not found, so viewmodels won't be bound to its entries."),
+				FText::FromName(WidgetName)));
+		}
+	}
+	else
+	{
+		UE::MVVM::FMessageLog Log(UserWidget);
+		Log.Error(FText::Format(INVTEXT("The field path for VirtualFlowView widget '{0}' is invalid, so viewmodels won't be bound to its entries."),
+			FText::FromName(WidgetName)));
 	}
 }
 
 void UMVVMViewVirtualFlowClassExtension::OnSourcesUninitialized(UUserWidget* UserWidget, UMVVMView* View,
 	UMVVMViewExtension* Extension)
 {
-	UVirtualFlowView* FlowView = Cast<UVirtualFlowView>(UserWidget);
-	if (IsValid(FlowView))
+	TWeakObjectPtr<UVirtualFlowView> FlowView;
+	if (CachedFlowViewWidgets.RemoveAndCopyValue(FObjectKey(View), FlowView))
 	{
-		FlowView->OnItemWidgetGenerated.RemoveDynamic(this, &ThisClass::HandleItemWidgetGenerated);
+		if (UVirtualFlowView* FlowViewPtr = FlowView.Get())
+		{
+			FlowViewPtr->OnItemWidgetGenerated.RemoveDynamic(this, &ThisClass::HandleItemWidgetGenerated);
+		}
 	}
 }
 

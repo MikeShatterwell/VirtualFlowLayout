@@ -22,6 +22,7 @@ class UMVVMView;
 #include "MVVMViewVirtualFlowClassExtension.generated.h"
 
 class UUserWidget;
+class UVirtualFlowView;
 
 /**
  * Runtime MVVM extension that automatically sets the entry ViewModel on pooled
@@ -62,4 +63,7 @@ private:
 
 	UPROPERTY()
 	FMVVMVCompiledFieldPath WidgetPath;
+
+	/** Caches the resolved UVirtualFlowView per owning UMVVMView so we can unbind cleanly. */
+	TMap<FObjectKey, TWeakObjectPtr<UVirtualFlowView>> CachedFlowViewWidgets;
 };
