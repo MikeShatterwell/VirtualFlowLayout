@@ -64,19 +64,12 @@ void FVirtualFlowViewDetails::CustomizeDetails(
 		return;
 	}
 
-	IDetailCategoryBuilder& MVVMCategory = InDetailLayout.EditCategory("VirtualFlowView|Entries");
+	IDetailCategoryBuilder& MVVMCategory = InDetailLayout.EditCategory("VirtualFlow|Entries");
 	const FName NAME_ViewmodelExtension = "ViewmodelExtension";
 
 	// Fetch the entry widget class property handle.
 	TArray<TSharedRef<IPropertyHandle>> DefaultProperties;
 	MVVMCategory.GetDefaultProperties(DefaultProperties);
-
-	// EntryWidgetClass may live in a different category; search all categories.
-	if (DefaultProperties.IsEmpty())
-	{
-		IDetailCategoryBuilder& EntriesCategory = InDetailLayout.EditCategory("ListEntries");
-		EntriesCategory.GetDefaultProperties(DefaultProperties);
-	}
 
 	TSharedRef<IPropertyHandle>* EntryClassPtr = DefaultProperties.FindByPredicate(
 		[](const TSharedRef<IPropertyHandle>& Property)
