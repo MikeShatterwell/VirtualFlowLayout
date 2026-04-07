@@ -13,6 +13,9 @@
 #include <Types/SlateEnums.h>
 #include <Layout/Margin.h>
 
+// UMG
+#include <Blueprint/UserWidget.h>
+
 #include "VirtualFlowItem.generated.h"
 
 class UUserWidget;
@@ -181,6 +184,31 @@ struct FVirtualFlowItemLayout
 	// When true, the item's expansion state cannot be changed by any path (click, code, CollapseAll, etc.).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Virtual Flow")
 	bool bLockExpansion = false;
+
+	friend bool operator==(const FVirtualFlowItemLayout& A, const FVirtualFlowItemLayout& B)
+	{
+		return A.ColumnSpan == B.ColumnSpan
+			&& A.RowSpan == B.RowSpan
+			&& A.HeightMode == B.HeightMode
+			&& A.Height == B.Height
+			&& A.AspectRatio == B.AspectRatio
+			&& A.SlotMargin == B.SlotMargin
+			&& A.EntryHorizontalAlignment == B.EntryHorizontalAlignment
+			&& A.EntryVerticalAlignment == B.EntryVerticalAlignment
+			&& A.EntryMinWidth == B.EntryMinWidth
+			&& A.EntryMaxWidth == B.EntryMaxWidth
+			&& A.EntryMinHeight == B.EntryMinHeight
+			&& A.EntryMaxHeight == B.EntryMaxHeight
+			&& A.bSelectable == B.bSelectable
+			&& A.bFullRow == B.bFullRow
+			&& A.bBreakLineBefore == B.bBreakLineBefore
+			&& A.bBreakLineAfter == B.bBreakLineAfter
+			&& A.EntryWidgetClass == B.EntryWidgetClass
+			&& A.ChildrenPresentation == B.ChildrenPresentation
+			&& A.bChildrenExpanded == B.bChildrenExpanded
+			&& A.bToggleExpansionOnClick == B.bToggleExpansionOnClick
+			&& A.bLockExpansion == B.bLockExpansion;
+	}
 };
 
 UINTERFACE(BlueprintType)
