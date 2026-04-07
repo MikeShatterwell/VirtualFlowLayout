@@ -33,26 +33,35 @@ class VIRTUALFLOWLAYOUTS_API IVirtualFlowEntryWidgetInterface
 	GENERATED_BODY()
 
 public:
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Virtual Flow")
+	virtual void NativeOnVirtualFlowItemObjectSet(UObject* InItemObject, UVirtualFlowView* OwningView);
+	virtual void NativeOnVirtualFlowItemSelectionChanged(bool bInSelected, EVirtualFlowInteractionSource InSource);
+	virtual void NativeOnVirtualFlowItemHoveredChanged(bool bInHovered);
+	virtual void NativeOnVirtualFlowItemExpansionChanged(bool bInExpanded, EVirtualFlowInteractionSource InSource);
+	virtual void NativeOnVirtualFlowItemReleased();
+	virtual UWidget* NativeGetVirtualFlowPreferredFocusTarget() const;
+	virtual bool NativeRequestVirtualFlowChildFocus(UObject* ChildItem, EUINavigation Direction);
+
+protected:
+	UFUNCTION(BlueprintImplementableEvent, Category = "Virtual Flow")
 	void OnVirtualFlowItemObjectSet(UObject* InItemObject, UVirtualFlowView* OwningView);
 
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintImplementableEvent, Category = "Virtual Flow")
 	void OnVirtualFlowItemSelectionChanged(bool bInSelected, EVirtualFlowInteractionSource InSource);
 
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintImplementableEvent, Category = "Virtual Flow")
 	void OnVirtualFlowItemHoveredChanged(bool bInHovered);
 
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintImplementableEvent, Category = "Virtual Flow")
 	void OnVirtualFlowItemExpansionChanged(bool bInExpanded, EVirtualFlowInteractionSource InSource);
 
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintImplementableEvent, Category = "Virtual Flow")
 	void OnVirtualFlowItemReleased();
 
 	/**
 	 * Optional preferred focus target within the widget hierarchy.
 	 * Return nullptr to use the root entry widget itself.
 	 */
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintImplementableEvent, Category = "Virtual Flow")
 	UWidget* GetVirtualFlowPreferredFocusTarget() const;
 
 	/**
@@ -60,6 +69,6 @@ public:
 	 * should become visible and focusable, such as within a horizontally scrolling child list.
 	 * Return true when the widget accepted the request.
 	 */
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Virtual Flow")
+	UFUNCTION(BlueprintImplementableEvent, Category = "Virtual Flow")
 	bool RequestVirtualFlowChildFocus(UObject* ChildItem, EUINavigation Direction);
 };
