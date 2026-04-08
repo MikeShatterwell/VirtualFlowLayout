@@ -75,6 +75,11 @@ public class VirtualFlowLayouts : ModuleRules
 						{
 							PublicDefinitions.Add("WITH_INPUT_FLOW_DEBUGGER=0");
 						}
+
+						if (PluginName == "ModelViewViewModel")
+						{
+							PrivateDependencyModuleNames.Add("ModelViewViewModel");
+						}
 					}
 
 					var Symbol = $"WITH_PLUGIN_{PluginName.ToUpper()}={(IsPluginEnabled ? 1 : 0)}";

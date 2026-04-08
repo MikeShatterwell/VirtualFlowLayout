@@ -593,7 +593,7 @@ private:
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (EditCondition = "DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::GeneratedFakeData", EditConditionHides))
 	bool bDesignerPreviewUseGroups = true;
 
-	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (EditCondition = "bDesignerPreviewUseGroups && bDesignerPreviewGroupsExpandable && DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::GeneratedFakeData"))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (EditCondition = "bDesignerPreviewUseGroups && DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::GeneratedFakeData"))
 	bool bDesignerPreviewGroupsStartExpanded = true;
 
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (EditCondition = "DesignerPreviewDataSource == EVirtualFlowDesignerPreviewDataSource::GeneratedFakeData", EditConditionHides))

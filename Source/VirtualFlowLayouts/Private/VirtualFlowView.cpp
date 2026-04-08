@@ -23,6 +23,11 @@
 // SlateCore
 #include <Styling/UMGCoreStyle.h>
 
+#if WITH_PLUGIN_MODELVIEWVIEWMODEL
+// ModelViewViewModel
+#include <View/MVVMView.h>
+#endif
+
 // Internal
 #include "SVirtualFlowMinimap.h"
 #include "SVirtualFlowView.h"
@@ -2152,6 +2157,24 @@ void UVirtualFlowView::InitializeEntryWidget(UUserWidget* WidgetObject, UObject*
 	{
 		return;
 	}
+
+#if WITH_EDITOR && WITH_PLUGIN_MODELVIEWVIEWMODEL
+	// Support a very specific setup where an entry widget receives a ViewModel instance via OnVirtualFlowItemObjectSet,
+	// then calls SetViewModel on itself.
+	// Note that this will only work if UMVVMViewClass is modified to implement InitializeInEditor to call Construct + Initialize
+	// Possibly playing with fire here, but so far in testing it works without crashing and lets designers see
+	// the actual data (text/images/etc) in the UMG designer with the actual layout data from the FVirtualFlowItemLayout struct,
+	// which is amazing for quickly iterating.
+	if (IsDesignTime())
+	{
+		UMVVMView* View = WidgetObject->GetExtension<UMVVMView>();
+		if (IsValid(View))
+		{
+			View->InitializeSources();
+			View->InitializeBindings();
+		}
+	}
+#endif // WITH_EDITOR && WITH_PLUGIN_MODELVIEWVIEWMODEL
 
 	if (UVirtualFlowEntryWidgetExtension* Extension = GetOrCreateEntryExtension(WidgetObject))
 	{
