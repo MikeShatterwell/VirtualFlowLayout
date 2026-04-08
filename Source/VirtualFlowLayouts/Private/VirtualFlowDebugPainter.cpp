@@ -848,6 +848,133 @@ void FVirtualFlowDebugPainter::PaintDesignerOverlay(
 		}
 	}
 
+	// --- Column / Row Grid Lines (per-section column counts) ---
+	if (Params.Layout && Params.Layout->Items.Num() > 0)
+	{
+		const FMargin& Padding = Params.ContentPadding;
+		const bool bHoriz = Params.bIsHorizontal;
+		const float AvailWidth = Params.ContentWidth;
+		const float Gutter = Params.CrossAxisSpacing;
+		const int32 DefaultTracks = Params.TrackCount;
+
+		const FLinearColor ColLineColor(0.3f, 0.6f, 1.0f, 0.75f);
+		const FLinearColor RowLineColor(0.3f, 1.0f, 0.6f, 0.8f);
+		constexpr float GridLineThickness = 2.0f;
+
+		const float VisibleMainStart = Params.VisualScrollOffset;
+		const float VisibleMainEnd = VisibleMainStart + (bHoriz ? Params.ViewportWidth : Params.ViewportHeight);
+		const FVirtualFlowLayoutSnapshot& Layout = *Params.Layout;
+
+		// Build per-section ranges: each section starts at a depth-0 item.
+		struct FSectionRange
+		{
+			float MainStart = 0.0f;
+			float MainEnd = 0.0f;
+			int32 Tracks = 1;
+		};
+		TArray<FSectionRange> Sections;
+
+		for (int32 i = 0; i < Layout.Items.Num(); ++i)
+		{
+			const FVirtualFlowPlacedItem& Placed = Layout.Items[i];
+			if (Placed.Depth == 0)
+			{
+				// Resolve this section's track count (mirrors ResolveSectionTrackCount logic).
+				const int32 SectionTracks = (Placed.Layout.ColumnCount > 0)
+					? Placed.Layout.ColumnCount : DefaultTracks;
+
+				FSectionRange& Section = Sections.AddDefaulted_GetRef();
+				Section.MainStart = Placed.Y;
+				Section.MainEnd = Placed.Y + Placed.Height; // extended below
+				Section.Tracks = SectionTracks;
+			}
+			else if (Sections.Num() > 0)
+			{
+				// Extend the current section to cover this child item.
+				Sections.Last().MainEnd = FMath::Max(Sections.Last().MainEnd, Placed.Y + Placed.Height);
+			}
+		}
+
+		// If no depth-0 items exist, treat the whole layout as one section.
+		if (Sections.Num() == 0)
+		{
+			FSectionRange& Section = Sections.AddDefaulted_GetRef();
+			Section.MainStart = 0.0f;
+			Section.MainEnd = Params.ContentHeight;
+			Section.Tracks = DefaultTracks;
+		}
+
+		// Draw column dividers per section.
+		for (const FSectionRange& Section : Sections)
+		{
+			if (Section.Tracks <= 1)
+			{
+				continue;
+			}
+
+			const float TotalSpacing = Gutter * FMath::Max(0, Section.Tracks - 1);
+			const float TrackWidth = FMath::Max(1.0f, (AvailWidth - TotalSpacing) / static_cast<float>(Section.Tracks));
+
+			const float DrawMainStart = Section.MainStart - Params.VisualScrollOffset;
+			const float DrawMainLength = Section.MainEnd - Section.MainStart;
+
+			for (int32 Col = 1; Col < Section.Tracks; ++Col)
+			{
+				const float CrossPos = Col * TrackWidth + (Col - 1) * Gutter + Gutter * 0.5f;
+
+				if (bHoriz)
+				{
+					FSlateDrawElement::MakeBox(OutDrawElements, OverlayLayer,
+						MakeVpPaintGeo(FVector2D(DrawMainLength, GridLineThickness),
+							FVector2D(Padding.Left + DrawMainStart, Padding.Top + CrossPos)),
+						WhiteBrush, ESlateDrawEffect::None, ColLineColor);
+				}
+				else
+				{
+					FSlateDrawElement::MakeBox(OutDrawElements, OverlayLayer,
+						MakeVpPaintGeo(FVector2D(GridLineThickness, DrawMainLength),
+							FVector2D(Padding.Left + CrossPos, Padding.Top + DrawMainStart)),
+						WhiteBrush, ESlateDrawEffect::None, ColLineColor);
+				}
+			}
+		}
+
+		// Row dividers — derive from placed item Y boundaries.
+		{
+			TSet<int32> RowEdges; // Y positions * 10 to deduplicate
+			for (const FVirtualFlowPlacedItem& Placed : Layout.Items)
+			{
+				if (Placed.Y + Placed.Height < VisibleMainStart - 200.0f
+					|| Placed.Y > VisibleMainEnd + 200.0f)
+				{
+					continue;
+				}
+				RowEdges.Add(FMath::RoundToInt(Placed.Y * 10.0f));
+				RowEdges.Add(FMath::RoundToInt((Placed.Y + Placed.Height) * 10.0f));
+			}
+
+			for (const int32 EdgeTenths : RowEdges)
+			{
+				const float RowMainPos = static_cast<float>(EdgeTenths) * 0.1f;
+				const float LocalMain = RowMainPos - Params.VisualScrollOffset;
+				if (bHoriz)
+				{
+					FSlateDrawElement::MakeBox(OutDrawElements, OverlayLayer,
+						MakeVpPaintGeo(FVector2D(GridLineThickness, AvailWidth),
+							FVector2D(Padding.Left + LocalMain, Padding.Top)),
+						WhiteBrush, ESlateDrawEffect::None, RowLineColor);
+				}
+				else
+				{
+					FSlateDrawElement::MakeBox(OutDrawElements, OverlayLayer,
+						MakeVpPaintGeo(FVector2D(AvailWidth, GridLineThickness),
+							FVector2D(Padding.Left, Padding.Top + LocalMain)),
+						WhiteBrush, ESlateDrawEffect::None, RowLineColor);
+				}
+			}
+		}
+	}
+
 	// --- Navigation Scroll Buffer Zones ---
 	if (Params.NavigationScrollBuffer > 0.0f && Params.ViewportHeight > 0.0f)
 	{
@@ -988,8 +1115,14 @@ void FVirtualFlowDebugPainter::PaintDesignerOverlay(
 				FMath::Max(0.0f, MainExtent - 2.0f * Params.NavigationScrollBuffer));
 		}
 
+		if (Params.TrackCount > 1)
+		{
+			Summary += FString::Printf(TEXT("\nTracks: %d  Gutter: %.0f  RowGap: %.0f"),
+				Params.TrackCount, Params.CrossAxisSpacing, Params.MainAxisSpacing);
+		}
+
 		constexpr float HudWidth = 320.0f;
-		constexpr float HudHeight = 56.0f;
+		constexpr float HudHeight = 70.0f;
 		constexpr float HudMargin = 6.0f;
 
 		FSlateDrawElement::MakeBox(OutDrawElements, OverlayLayer,

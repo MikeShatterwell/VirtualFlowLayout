@@ -802,6 +802,4 @@ private:
 	static constexpr float ScrollBarReleaseThreshold = 0.92f;
 	/** Frames to wait after a scrollbar reservation flip before allowing another. */
 	static constexpr int32 ScrollBarReservationCooldownFrames = 8;
-	/** Caps expensive Slate prepass measurement work per frame to avoid scroll hitches. */
-	static constexpr int32 MaxMeasurementsPerTick = 4;
 };

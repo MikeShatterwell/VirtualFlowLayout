@@ -6,6 +6,7 @@
 #include <CoreMinimal.h>
 
 // CoreUObject
+#include <Containers/Ticker.h>
 #include <UObject/ObjectKey.h>
 
 #if VIRTUALFLOW_WITH_MVVM
@@ -57,6 +58,9 @@ public:
 private:
 	UFUNCTION()
 	void HandleItemWidgetGenerated(UObject* Item, UUserWidget* ItemWidget);
+	bool HandleFlushTick(float DeltaTime);
+
+	void FlushPendingBinds();
 
 	UPROPERTY()
 	FName WidgetName;
@@ -69,4 +73,7 @@ private:
 
 	/** Caches the resolved UVirtualFlowView per owning UMVVMView so we can unbind cleanly. */
 	TMap<FObjectKey, TWeakObjectPtr<UVirtualFlowView>> CachedFlowViewWidgets;
+
+	TMap<TWeakObjectPtr<UUserWidget>, TWeakObjectPtr<UObject>> PendingViewModelBinds;
+	FTSTicker::FDelegateHandle TickerHandle;
 };

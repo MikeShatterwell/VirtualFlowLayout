@@ -116,6 +116,14 @@ struct FVirtualFlowItemLayout
 {
 	GENERATED_BODY()
 
+	/**
+	 * Per-section column count override. When a section header (Depth 0) returns a non-zero
+	 * value, layout engines that support sections will use it instead of the view's
+	 * DefaultNumColumns for that section's children. 0 means "use the view default".
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Virtual Flow|Placement", meta = (ClampMin = 0))
+	int32 ColumnCount = 0;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Virtual Flow|Placement", meta = (ClampMin = 1))
 	int32 ColumnSpan = 1;
 
@@ -133,7 +141,7 @@ struct FVirtualFlowItemLayout
 
 	/**
 	 * Margin around the entry widget's slot box, applied by the layout engine.
-	 * This controls space *outside* the slot — it is not the same as UMG padding
+	 * This controls space *outside* the slot, it is not the same as UMG padding
 	 * applied inside the entry widget itself. Both can be set independently.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Virtual Flow|Placement")
@@ -187,7 +195,8 @@ struct FVirtualFlowItemLayout
 
 	friend bool operator==(const FVirtualFlowItemLayout& A, const FVirtualFlowItemLayout& B)
 	{
-		return A.ColumnSpan == B.ColumnSpan
+		return A.ColumnCount == B.ColumnCount
+			&& A.ColumnSpan == B.ColumnSpan
 			&& A.RowSpan == B.RowSpan
 			&& A.HeightMode == B.HeightMode
 			&& A.Height == B.Height

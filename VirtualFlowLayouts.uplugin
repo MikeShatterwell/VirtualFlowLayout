@@ -15,6 +15,11 @@
 			"Name": "VirtualFlowLayoutsMVVM",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "VirtualFlowLayoutsEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	],
 	"Plugins": [

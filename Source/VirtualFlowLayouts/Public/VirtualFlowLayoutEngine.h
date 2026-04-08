@@ -194,6 +194,12 @@ struct FVirtualFlowLayoutBuildContext
 	const FVirtualFlowLayoutSnapshot* PreviousSnapshot = nullptr;
 	const TMap<TWeakObjectPtr<UObject>, float>* MeasuredItemHeights = nullptr;
 	const TMap<TWeakObjectPtr<const UClass>, FVirtualFlowHeightStats>* ClassHeightStats = nullptr;
+
+	/** Returns the effective track count for a section, using the header's ColumnCount override if non-zero. */
+	int32 ResolveSectionTrackCount(const FVirtualFlowItemLayout& SectionHeaderLayout) const
+	{
+		return (SectionHeaderLayout.ColumnCount > 0) ? SectionHeaderLayout.ColumnCount : TrackCount;
+	}
 };
 
 /**

@@ -1068,11 +1068,7 @@ int32 SVirtualFlowView::OnPaint(const FPaintArgs& Args, const FGeometry& Allotte
 		FVirtualFlowDesignerDebugParams DebugParams;
 		PopulateDesignerDebugParams(DebugParams);
 
-		// Compute the viewport's local offset using both cached geometries
-		// (same arrange-pass coordinate space) to avoid a mismatch with the
-		// paint-pass AllottedGeometry — the UMG Designer applies a render
-		// transform (pan/zoom) that is present in AllottedGeometry but not
-		// in cached geometry, which would shift the overlay up/left.
+		// Fix slight offsets in the debug overlay
 		const FGeometry& SelfCachedGeo = GetCachedGeometry();
 		const FGeometry& VpCachedGeo   = ViewportBorder->GetCachedGeometry();
 		const float CachedInvScale = (SelfCachedGeo.Scale > SMALL_NUMBER) ? (1.0f / SelfCachedGeo.Scale) : 1.0f;
@@ -1239,6 +1235,9 @@ void SVirtualFlowView::PopulateDesignerDebugParams(FVirtualFlowDesignerDebugPara
 	Params.RealizedItemCount = RealizedItemMap.Num();
 	Params.MeasuredItemCount = LayoutCache.MeasuredItemHeights.Num();
 	Params.NavigationScrollBuffer = OwnerWidget.IsValid() ? OwnerWidget->GetNavigationScrollBuffer() : 0.0f;
+	Params.TrackCount = OwnerWidget.IsValid() ? FMath::Max(1, OwnerWidget->GetNumColumns()) : 1;
+	Params.CrossAxisSpacing = OwnerWidget.IsValid() ? OwnerWidget->GetColumnSpacing() : 0.0f;
+	Params.MainAxisSpacing = OwnerWidget.IsValid() ? OwnerWidget->GetLineSpacing() : 0.0f;
 
 	Params.RealizedIndices.Reserve(RealizedItemMap.Num());
 	for (const auto& Pair : RealizedItemMap)
@@ -2649,7 +2648,7 @@ bool SVirtualFlowView::MeasureRealizedItems()
 	// At runtime, the budget scales with the pending count but is capped at
 	// MaxMeasurementsPerTick to limit the Slate prepass cost per frame.
 	const bool bDesignTime = OwnerWidget.IsValid() && OwnerWidget->IsDesignTime();
-	const int32 DynamicBudget = FMath::Clamp(Realization.PendingMeasurementCount, 1, MaxMeasurementsPerTick);
+	const int32 DynamicBudget = FMath::Clamp(Realization.PendingMeasurementCount, 1, OwnerWidget->MaxMeasurementsPerTick);
 	
 	const int32 Budget = bDesignTime ? RealizedItemMap.Num() : DynamicBudget;
 

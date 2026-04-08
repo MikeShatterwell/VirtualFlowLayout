@@ -1858,7 +1858,7 @@ void UVirtualFlowView::ConfigurePreviewLeaf(
 		return;
 	}
 
-	const int32 MaxPreviewSpan = FMath::Max(1, NumColumns);
+	const int32 MaxPreviewSpan = FMath::Max(1, DefaultNumColumns);
 	const TSubclassOf<UUserWidget> LeafWidgetClass =
 		DesignerPreviewLeafEntryWidgetClass ? DesignerPreviewLeafEntryWidgetClass : EntryWidgetClass;
 
@@ -1940,7 +1940,7 @@ void UVirtualFlowView::ConfigurePreviewHeader(UVirtualFlowPreviewItem* Item, con
 	FVirtualFlowItemLayout Layout;
 	Layout.EntryWidgetClass = HeaderWidgetClass;
 	Layout.bFullRow = true;
-	Layout.ColumnSpan = NumColumns;
+	Layout.ColumnSpan = DefaultNumColumns;
 	Layout.HeightMode = EVirtualFlowItemHeightMode::SpecificHeight;
 	Layout.Height = FMath::Max(48.0f, DefaultEstimatedEntryHeight * 0.45f);
 	Layout.bSelectable = false;

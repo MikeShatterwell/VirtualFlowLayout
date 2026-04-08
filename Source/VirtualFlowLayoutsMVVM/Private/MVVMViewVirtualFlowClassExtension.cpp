@@ -79,13 +79,51 @@ void UMVVMViewVirtualFlowClassExtension::OnSourcesUninitialized(UUserWidget* Use
 
 void UMVVMViewVirtualFlowClassExtension::HandleItemWidgetGenerated(UObject* Item, UUserWidget* ItemWidget)
 {
-	UMVVMView* EntryView = UMVVMSubsystem::GetViewFromUserWidget(ItemWidget);
-	if (!IsValid(ItemWidget) || !IsValid(Item) || !IsValid(EntryView))
+	if (!IsValid(ItemWidget) || !IsValid(Item))
 	{
 		return;
 	}
 
-	EntryView->SetViewModel(EntryViewModelName, Item);
+	// Just record intent — don't call SetViewModel yet.
+	PendingViewModelBinds.FindOrAdd(ItemWidget) = Item;
+
+	// Schedule a flush for end-of-frame if not already pending.
+	if (!TickerHandle.IsValid())
+	{
+		// Ticker setup in HandleItemWidgetGenerated:
+		TickerHandle = FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateUObject(this, &ThisClass::HandleFlushTick));
+	}
+}
+
+bool UMVVMViewVirtualFlowClassExtension::HandleFlushTick(float DeltaTime)
+{
+	TickerHandle.Reset();
+	FlushPendingBinds();
+	return false;
+}
+
+void UMVVMViewVirtualFlowClassExtension::FlushPendingBinds()
+{
+	TickerHandle.Reset();
+
+	for (auto It = PendingViewModelBinds.CreateIterator(); It; ++It)
+	{
+		UUserWidget* Widget = It->Key.Get();
+		UObject* Item = It->Value.Get();
+		if (!IsValid(Widget) || !IsValid(Item))
+		{
+			continue;
+		}
+
+		UMVVMView* EntryView = UMVVMSubsystem::GetViewFromUserWidget(Widget);
+		if (IsValid(EntryView))
+		{
+			EntryView->SetViewModel(EntryViewModelName, Item);
+		}
+	}
+
+	PendingViewModelBinds.Reset();
 }
 
 #else // VIRTUALFLOW_WITH_MVVM

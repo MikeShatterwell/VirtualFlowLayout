@@ -136,6 +136,7 @@ class VIRTUALFLOWLAYOUTS_API UVirtualFlowView : public UWidget
 	friend class SVirtualFlowMinimap;
 	friend class UVirtualFlowEntryWidgetExtension;
 	friend class FVirtualFlowNavigationPolicy;
+	friend class FVirtualFlowViewDetailCustomization;
 
 public:
 	UVirtualFlowView(const FObjectInitializer& ObjectInitializer);
@@ -266,9 +267,9 @@ public:
 
 	// --- Queries (layout, hierarchy, realized widgets) ---
 
-	/** Returns the configured column count (the NumColumns property). */
+	/** Returns the configured default column count (the DefaultNumColumns property). */
 	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Layout")
-	int32 GetConfiguredNumColumns() const { return NumColumns; }
+	int32 GetConfiguredNumColumns() const { return DefaultNumColumns; }
 
 	/** Returns the configured column spacing in pixels. */
 	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Layout")
@@ -362,7 +363,7 @@ public:
 	float GetNavigationScrollBuffer() const { return NavigationScrollBuffer; }
 	bool GetFocusSelectedItemWhenVisible() const { return bFocusSelectedItemWhenVisible; }
 	bool GetFocusCollapsingItemIfFocusedDescendantBecomesHidden() const { return bFocusCollapsingItemIfFocusedDescendantBecomesHidden; }
-	int32 GetNumColumns() const { return NumColumns; }
+	int32 GetNumColumns() const { return DefaultNumColumns; }
 	float GetColumnSpacing() const { return ColumnSpacing; }
 	float GetLineSpacing() const { return LineSpacing; }
 	EVirtualFlowOrientation GetOrientation() const { return Orientation; }
@@ -523,6 +524,8 @@ private:
 	void ReleaseDetachedEntryWidget(UUserWidget* WidgetObject);
 
 	// --- Child view delegation ---
+	// Used when there are nested VirtualFlowView instances inside entry widgets.
+	// These views can delegate their pooling and selection to the parent view to share state and avoid redundant widget generation.
 
 	/**
 	 * Walks the entry widget's WidgetTree for child UVirtualFlowView instances.
@@ -554,12 +557,6 @@ private:
 
 	/**
 	 * The layout engine that controls how items are arranged.
-	 *
-	 * Assign any UVirtualFlowLayoutEngine subclass here. Built-in options:
-	 *   - UFlowLayoutEngine -- left-to-right rows that wrap at the column boundary.
-	 *   - USectionedBlockGridLayoutEngine -- dense 2D sectioned block packing for store-style layouts.
-	 *   - UMasonryLayoutEngine -- Pinterest-style shortest-column packing.
-	 *   - UTimelineLayoutEngine -- alternating left/right placement along a central spine.
 	 *
 	 * Each engine subclass exposes its own tuning parameters inline. Custom engines
 	 * can be created in C++ or Blueprint by subclassing UVirtualFlowLayoutEngine.
@@ -711,7 +708,7 @@ private:
 	EVirtualFlowOrientation Orientation = EVirtualFlowOrientation::Vertical;
 
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Layout", meta = (ClampMin = 1))
-	int32 NumColumns = 4;
+	int32 DefaultNumColumns = 4;
 
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Layout", meta = (ClampMin = 0.0))
 	float ColumnSpacing = 12.0f;
@@ -728,6 +725,13 @@ private:
 	/** Default estimated entry size along the scroll axis (layout-space "height") used before measurement. */
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Virtualization", meta = (ClampMin = 1.0))
 	float DefaultEstimatedEntryHeight = 180.0f;
+
+	/**
+	 * Caps expensive Slate prepass measurement work per frame to avoid scroll hitches. A higher number will look better when
+	 * scrolling rapidly through many unmeasured items but may cause a bigger average frametime.
+	 */
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Virtualization", meta = (ClampMin = 1.0))
+	float MaxMeasurementsPerTick = 4.0f;
 
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Input", meta = (ClampMin = 0.0))
 	float WheelScrollAmount = 96.0f;
@@ -810,10 +814,12 @@ private:
 	float KeyboardScrollLines = 3.0f;
 
 	/** When enabled, the gamepad right stick scrolls the view along the main scroll axis. */
+	// TODO: FIX THIS
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Input")
 	bool bEnableRightStickScrolling = false;
 
 	/** Scroll speed in pixels per second at full right stick deflection. */
+	// TODO: FIX THIS
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Input", meta = (ClampMin = 0.0, EditCondition = "bEnableRightStickScrolling"))
 	float RightStickScrollSpeed = 800.0f;
 

@@ -4,6 +4,7 @@
 
 // UMG
 #include <Blueprint/UserWidget.h>
+#include <Kismet/KismetMathLibrary.h>
 
 namespace VirtualFlowLayoutEngineHelpers
 {
@@ -85,6 +86,8 @@ namespace VirtualFlowLayoutEngineHelpers
 
 float UVirtualFlowLayoutEngine::ComputeTrackWidth(const float AvailableWidth, const int32 TrackCount, const float CrossAxisSpacing)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
+
 	if (TrackCount <= 0)
 	{
 		return AvailableWidth;
@@ -95,6 +98,8 @@ float UVirtualFlowLayoutEngine::ComputeTrackWidth(const float AvailableWidth, co
 
 int32 UVirtualFlowLayoutEngine::ResolveSpan(const FVirtualFlowItemLayout& Layout, const int32 TrackCount)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
+
 	if (Layout.bFullRow)
 	{
 		return TrackCount;
@@ -104,6 +109,8 @@ int32 UVirtualFlowLayoutEngine::ResolveSpan(const FVirtualFlowItemLayout& Layout
 
 float UVirtualFlowLayoutEngine::EstimatePaddedHeight(const FVirtualFlowDisplayItem& Item, const float ItemWidth, const FVirtualFlowLayoutBuildContext& Context, EVirtualFlowHeightSource* OutHeightSource)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
+
 	const FVirtualFlowItemLayout& Layout = Item.Layout;
 	const float PadV = Layout.SlotMargin.Top + Layout.SlotMargin.Bottom;
 	const float PadH = Layout.SlotMargin.Left + Layout.SlotMargin.Right;
@@ -155,6 +162,8 @@ float UVirtualFlowLayoutEngine::EstimatePaddedHeight(const FVirtualFlowDisplayIt
 
 void UVirtualFlowLayoutEngine::FinalizeSnapshot(FVirtualFlowLayoutSnapshot& InOutSnapshot)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
+
 	// Sort items by Y position for efficient viewport culling (binary search).
 	InOutSnapshot.IndicesByTop.Reset(InOutSnapshot.Items.Num());
 	for (int32 i = 0; i < InOutSnapshot.Items.Num(); ++i)
@@ -188,11 +197,14 @@ void USectionedGridLayoutEngine::BuildLayout_Implementation(
 	const FVirtualFlowLayoutBuildContext& Context,
 	FVirtualFlowLayoutSnapshot& OutSnapshot) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
+
 	OutSnapshot.Reset();
 	if (DisplayItems.Num() == 0 || Context.TrackCount <= 0) { return; }
 
-	const int32 TrackCount = Context.TrackCount;
-	const float TrackWidth = ComputeTrackWidth(Context.AvailableWidth, TrackCount, Context.CrossAxisSpacing);
+	// Can both be overridden by section headers with custom track counts
+	int32 SectionTrackCount = Context.TrackCount;
+	float SectionTrackWidth = ComputeTrackWidth(Context.AvailableWidth, SectionTrackCount, Context.CrossAxisSpacing);
 
 	int32 CurrentColumn = 0;
 	int32 CurrentRow = 0;
@@ -240,17 +252,24 @@ void USectionedGridLayoutEngine::BuildLayout_Implementation(
 				RowY += Context.SectionSpacing - Context.MainAxisSpacing;
 			}
 		}
+
+		// Update per-section track count when entering a new section header
+		if (DisplayItem.Depth == 0)
+		{
+			SectionTrackCount = Context.ResolveSectionTrackCount(Layout);
+			SectionTrackWidth = ComputeTrackWidth(Context.AvailableWidth, SectionTrackCount, Context.CrossAxisSpacing);
+		}
 		LastDepth = DisplayItem.Depth;
 
 		if (Layout.bBreakLineBefore && CurrentColumn > 0) { FlushRow(); }
 
-		const int32 Span = ResolveSpan(Layout, TrackCount);
-		if (CurrentColumn + Span > TrackCount) { FlushRow(); }
+		const int32 Span = ResolveSpan(Layout, SectionTrackCount);
+		if (CurrentColumn + Span > SectionTrackCount) { FlushRow(); }
 
-		const float ItemWidth = (TrackWidth * Span) + Context.CrossAxisSpacing * FMath::Max(0, Span - 1);
+		const float ItemWidth = (SectionTrackWidth * Span) + Context.CrossAxisSpacing * FMath::Max(0, Span - 1);
 		EVirtualFlowHeightSource HeightSource;
 		const float ItemHeight = EstimatePaddedHeight(DisplayItem, ItemWidth, Context, &HeightSource);
-		const float ItemX = CurrentColumn * (TrackWidth + Context.CrossAxisSpacing);
+		const float ItemX = CurrentColumn * (SectionTrackWidth + Context.CrossAxisSpacing);
 
 		FVirtualFlowPlacedItem Placed;
 		static_cast<FVirtualFlowDisplayItem&>(Placed) = DisplayItem;
@@ -269,7 +288,7 @@ void USectionedGridLayoutEngine::BuildLayout_Implementation(
 		RowHeight = FMath::Max(RowHeight, ItemHeight);
 		CurrentColumn += Span;
 
-		if (Layout.bFullRow || Layout.bBreakLineAfter || CurrentColumn >= TrackCount) { FlushRow(); }
+		if (Layout.bFullRow || Layout.bBreakLineAfter || CurrentColumn >= SectionTrackCount) { FlushRow(); }
 	}
 
 	FinalizeSnapshot(OutSnapshot);
@@ -280,6 +299,8 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 	const FVirtualFlowLayoutBuildContext& Context,
 	FVirtualFlowLayoutSnapshot& OutSnapshot) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
+
 	using namespace VirtualFlowLayoutEngineHelpers;
 
 	OutSnapshot.Reset();
@@ -288,9 +309,10 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 		return;
 	}
 
-	const int32 TrackCount = Context.TrackCount;
-	const float CellWidth = bStretchToFit
-		? ComputeTrackWidth(Context.AvailableWidth, TrackCount, Context.CrossAxisSpacing)
+	// Can both be overridden by section headers with custom track counts
+	int32 SectionTrackCount = Context.TrackCount;
+	float SectionCellWidth = bStretchToFit
+		? ComputeTrackWidth(Context.AvailableWidth, SectionTrackCount, Context.CrossAxisSpacing)
 		: FMath::Max(1.0f, CellSize.X);
 	const float CellHeight = FMath::Max(1.0f, CellSize.Y);
 
@@ -341,7 +363,7 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 				if (PrevPlaced.ColumnSpan == ColumnSpan
 					&& PrevPlaced.RowSpan == RowSpan
 					&& LocalPrevRow >= 0
-					&& CanPlaceRect(OccupancyGrid, LocalPrevRow, PrevPlaced.ColumnStart, ColumnSpan, RowSpan, TrackCount))
+					&& CanPlaceRect(OccupancyGrid, LocalPrevRow, PrevPlaced.ColumnStart, ColumnSpan, RowSpan, SectionTrackCount))
 				{
 					OutRow = LocalPrevRow;
 					OutColumn = PrevPlaced.ColumnStart;
@@ -353,9 +375,9 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 		const int32 SearchStartRow = bDensePacking ? 0 : BandUsedRowCount;
 		for (int32 Row = SearchStartRow; ; ++Row)
 		{
-			for (int32 Column = 0; Column <= TrackCount - ColumnSpan; ++Column)
+			for (int32 Column = 0; Column <= SectionTrackCount - ColumnSpan; ++Column)
 			{
-				if (CanPlaceRect(OccupancyGrid, Row, Column, ColumnSpan, RowSpan, TrackCount))
+				if (CanPlaceRect(OccupancyGrid, Row, Column, ColumnSpan, RowSpan, SectionTrackCount))
 				{
 					OutRow = Row;
 					OutColumn = Column;
@@ -376,6 +398,15 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 			CommitBand();
 			ApplyPendingGap(Context.SectionSpacing);
 		}
+
+		// Update per-section track count when entering a new section header
+		if (DisplayItem.Depth == 0)
+		{
+			SectionTrackCount = Context.ResolveSectionTrackCount(Layout);
+			SectionCellWidth = bStretchToFit
+				? ComputeTrackWidth(Context.AvailableWidth, SectionTrackCount, Context.CrossAxisSpacing)
+				: FMath::Max(1.0f, CellSize.X);
+		}
 		LastDepth = DisplayItem.Depth;
 
 		if (bForceHeadersToFullRow && DisplayItem.Depth == 0)
@@ -388,10 +419,10 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 			CommitBand();
 		}
 
-		const int32 ColumnSpan = ResolveSpan(Layout, TrackCount);
+		const int32 ColumnSpan = ResolveSpan(Layout, SectionTrackCount);
 		const float ItemWidth = Layout.bFullRow
 			? Context.AvailableWidth
-			: (CellWidth * ColumnSpan) + Context.CrossAxisSpacing * FMath::Max(0, ColumnSpan - 1);
+			: (SectionCellWidth * ColumnSpan) + Context.CrossAxisSpacing * FMath::Max(0, ColumnSpan - 1);
 
 		if (Layout.bFullRow)
 		{
@@ -407,7 +438,7 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 			static_cast<FVirtualFlowDisplayItem&>(Placed) = DisplayItem;
 			Placed.Layout = Layout;
 			Placed.ColumnStart = 0;
-			Placed.ColumnSpan = TrackCount;
+			Placed.ColumnSpan = SectionTrackCount;
 			Placed.RowStart = GlobalRowCursor;
 			Placed.RowSpan = ConsumedRowSpan;
 			Placed.X = 0.0f;
@@ -440,7 +471,7 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 		int32 LocalRow = 0;
 		int32 LocalColumn = 0;
 		FindPlacement(DisplayItem, ColumnSpan, EffectiveRowSpan, LocalRow, LocalColumn);
-		OccupyRect(OccupancyGrid, LocalRow, LocalColumn, ColumnSpan, EffectiveRowSpan, TrackCount);
+		OccupyRect(OccupancyGrid, LocalRow, LocalColumn, ColumnSpan, EffectiveRowSpan, SectionTrackCount);
 		BandUsedRowCount = FMath::Max(BandUsedRowCount, LocalRow + EffectiveRowSpan);
 
 		FVirtualFlowPlacedItem Placed;
@@ -450,7 +481,7 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 		Placed.ColumnSpan = ColumnSpan;
 		Placed.RowStart = GlobalRowCursor + LocalRow;
 		Placed.RowSpan = EffectiveRowSpan;
-		Placed.X = LocalColumn * (CellWidth + Context.CrossAxisSpacing);
+		Placed.X = LocalColumn * (SectionCellWidth + Context.CrossAxisSpacing);
 		Placed.Y = CursorY + LocalRow * (CellHeight + Context.MainAxisSpacing);
 		Placed.Width = ItemWidth;
 		Placed.Height = ItemHeight;
@@ -474,8 +505,13 @@ void UListLayoutEngine::BuildLayout_Implementation(
 	const FVirtualFlowLayoutBuildContext& Context,
 	FVirtualFlowLayoutSnapshot& OutSnapshot) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
+
 	OutSnapshot.Reset();
-	if (DisplayItems.Num() == 0) { return; }
+	if (DisplayItems.Num() == 0)
+	{
+		return;
+	}
 
 	float CurrentY = 0.0f;
 	int32 LastDepth = 0;
@@ -525,8 +561,13 @@ void UTileLayoutEngine::BuildLayout_Implementation(
 	const FVirtualFlowLayoutBuildContext& Context,
 	FVirtualFlowLayoutSnapshot& OutSnapshot) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
+
 	OutSnapshot.Reset();
-	if (DisplayItems.Num() == 0) { return; }
+	if (DisplayItems.IsEmpty())
+	{
+		return;
+	}
 
 	float CurrentY = 0.0f;
 	int32 CurrentCol = 0;
@@ -536,14 +577,23 @@ void UTileLayoutEngine::BuildLayout_Implementation(
 
 	// Determine how many tiles fit in one row based on TileSize.X or stretch mode
 	const float EffectiveTileWidth = FMath::Max(1.0f, TileSize.X);
-	int32 TilesPerRow = FMath::Max(1, FMath::FloorToInt((Context.AvailableWidth + Context.CrossAxisSpacing) / (EffectiveTileWidth + Context.CrossAxisSpacing)));
-	
-	if (bStretchToFit && Context.TrackCount > 0)
-	{
-		TilesPerRow = Context.TrackCount;
-	}
 
-	const float ComputedWidth = bStretchToFit ? ComputeTrackWidth(Context.AvailableWidth, TilesPerRow, Context.CrossAxisSpacing) : EffectiveTileWidth;
+	// Per-section tile metrics (updated when a depth-0 header provides a ColumnCount override)
+	auto ResolveTileMetrics = [&](const int32 InTrackCount, int32& OutTilesPerRow, float& OutComputedWidth)
+	{
+		const int32 Tiles = FMath::FloorToInt(UKismetMathLibrary::SafeDivide(
+			Context.AvailableWidth + Context.CrossAxisSpacing, EffectiveTileWidth + Context.CrossAxisSpacing));
+		OutTilesPerRow = FMath::Max(1, Tiles);
+		if (bStretchToFit && InTrackCount > 0)
+		{
+			OutTilesPerRow = InTrackCount;
+		}
+		OutComputedWidth = bStretchToFit ? ComputeTrackWidth(Context.AvailableWidth, OutTilesPerRow, Context.CrossAxisSpacing) : EffectiveTileWidth;
+	};
+
+	int32 TilesPerRow = 0;
+	float ComputedWidth = 0.0f;
+	ResolveTileMetrics(Context.TrackCount, TilesPerRow, ComputedWidth);
 
 	auto FlushRow = [&]()
 	{
@@ -572,6 +622,13 @@ void UTileLayoutEngine::BuildLayout_Implementation(
 			{
 				CurrentY += Context.SectionSpacing - Context.MainAxisSpacing;
 			}
+		}
+
+		// Update per-section tile metrics when entering a new section header
+		if (DisplayItem.Depth == 0)
+		{
+			const int32 SectionTrackCount = Context.ResolveSectionTrackCount(Layout);
+			ResolveTileMetrics(SectionTrackCount, TilesPerRow, ComputedWidth);
 		}
 		LastDepth = DisplayItem.Depth;
 
@@ -648,6 +705,8 @@ void UTreeLayoutEngine::BuildLayout_Implementation(
 	const FVirtualFlowLayoutBuildContext& Context,
 	FVirtualFlowLayoutSnapshot& OutSnapshot) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
+
 	OutSnapshot.Reset();
 	if (DisplayItems.Num() == 0) { return; }
 
@@ -696,12 +755,14 @@ void UFlowLayoutEngine::BuildLayout_Implementation(
 	const FVirtualFlowLayoutBuildContext& Context,
 	FVirtualFlowLayoutSnapshot& OutSnapshot) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
+
 	OutSnapshot.Reset();
 	if (DisplayItems.Num() == 0 || Context.TrackCount <= 0) { return; }
 
-	const int32 TrackCount = Context.TrackCount;
-	// Calculate the width of each cell in the grid
-	const float TrackWidth = ComputeTrackWidth(Context.AvailableWidth, TrackCount, Context.CrossAxisSpacing);
+	// Can both be overridden by section headers with custom track counts
+	int32 SectionTrackCount = Context.TrackCount;
+	float SectionTrackWidth = ComputeTrackWidth(Context.AvailableWidth, SectionTrackCount, Context.CrossAxisSpacing);
 
 	int32 CurrentColumn = 0;
 	int32 CurrentRow = 0;
@@ -735,6 +796,13 @@ void UFlowLayoutEngine::BuildLayout_Implementation(
 			FlushRow();
 			RowY += Context.SectionSpacing - Context.MainAxisSpacing;
 		}
+
+		// Update per-section track count when entering a new section header
+		if (DisplayItem.Depth == 0)
+		{
+			SectionTrackCount = Context.ResolveSectionTrackCount(Layout);
+			SectionTrackWidth = ComputeTrackWidth(Context.AvailableWidth, SectionTrackCount, Context.CrossAxisSpacing);
+		}
 		LastDepth = DisplayItem.Depth;
 
 		// Force a new line if requested
@@ -744,20 +812,20 @@ void UFlowLayoutEngine::BuildLayout_Implementation(
 		}
 
 		// Ensure we don't exceed the grid width
-		const int32 Span = ResolveSpan(Layout, TrackCount);
-		if (CurrentColumn + Span > TrackCount)
+		const int32 Span = ResolveSpan(Layout, SectionTrackCount);
+		if (CurrentColumn + Span > SectionTrackCount)
 		{
 			FlushRow();
 		}
 
 		// Calculate item dimensions.
 		// Width includes the spans and the gutters between them.
-		const float ItemWidth = (TrackWidth * Span) + Context.CrossAxisSpacing * FMath::Max(0, Span - 1);
+		const float ItemWidth = (SectionTrackWidth * Span) + Context.CrossAxisSpacing * FMath::Max(0, Span - 1);
 		EVirtualFlowHeightSource HeightSource;
 		const float ItemHeight = EstimatePaddedHeight(DisplayItem, ItemWidth, Context, &HeightSource);
 		
 		// Horizontal position is based simply on the current column index
-		const float ItemX = CurrentColumn * (TrackWidth + Context.CrossAxisSpacing);
+		const float ItemX = CurrentColumn * (SectionTrackWidth + Context.CrossAxisSpacing);
 
 		FVirtualFlowPlacedItem Placed;
 		static_cast<FVirtualFlowDisplayItem&>(Placed) = DisplayItem;
@@ -777,7 +845,7 @@ void UFlowLayoutEngine::BuildLayout_Implementation(
 		RowHeight = FMath::Max(RowHeight, ItemHeight);
 		CurrentColumn += Span;
 
-		if (Layout.bFullRow || Layout.bBreakLineAfter || CurrentColumn >= TrackCount)
+		if (Layout.bFullRow || Layout.bBreakLineAfter || CurrentColumn >= SectionTrackCount)
 		{
 			FlushRow();
 		}
@@ -791,16 +859,19 @@ void UMasonryLayoutEngine::BuildLayout_Implementation(
 	const FVirtualFlowLayoutBuildContext& Context,
 	FVirtualFlowLayoutSnapshot& OutSnapshot) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
+
 	OutSnapshot.Reset();
 	if (DisplayItems.Num() == 0 || Context.TrackCount <= 0) { return; }
 
-	const int32 TrackCount = Context.TrackCount;
-	const float TrackWidth = ComputeTrackWidth(Context.AvailableWidth, TrackCount, Context.CrossAxisSpacing);
+	// Can both be overridden by section headers with custom track counts
+	int32 SectionTrackCount = Context.TrackCount;
+	float SectionTrackWidth = ComputeTrackWidth(Context.AvailableWidth, SectionTrackCount, Context.CrossAxisSpacing);
 
 	// Masonry differs from Flow in that it tracks the bottom Y position of each column independently.
 	// We don't have rows in the traditional sense, entries in each lane can be staggered vertically based on their individual heights.
 	TArray<float> LaneBottoms;
-	LaneBottoms.SetNumZeroed(TrackCount);
+	LaneBottoms.SetNumZeroed(SectionTrackCount);
 	int32 LastDepth = 0;
 
 	// Normalizing lanes brings all columns down to the lowest point.
@@ -812,9 +883,9 @@ void UMasonryLayoutEngine::BuildLayout_Implementation(
 		{
 			MaxBottom = FMath::Max(MaxBottom, B);
 		}
-		for (float& B : LaneBottoms)
+		for (float& Bottom : LaneBottoms)
 		{
-			B = MaxBottom;
+			Bottom = MaxBottom;
 		}
 	};
 
@@ -829,9 +900,27 @@ void UMasonryLayoutEngine::BuildLayout_Implementation(
 		if (DisplayItem.Depth == 0 && i > 0 && LastDepth > 0 && Context.SectionSpacing > 0.0f)
 		{
 			NormalizeLanes();
-			for (float& B : LaneBottoms)
+			for (float& Bottom : LaneBottoms)
 			{
-				B += Context.SectionSpacing;
+				Bottom += Context.SectionSpacing;
+			}
+		}
+
+		// Update per-section track count when entering a new section header
+		if (DisplayItem.Depth == 0)
+		{
+			const int32 NewSectionTrackCount = Context.ResolveSectionTrackCount(Layout);
+			if (NewSectionTrackCount != SectionTrackCount)
+			{
+				NormalizeLanes();
+				const float CarryOver = LaneBottoms.Num() > 0 ? LaneBottoms[0] : 0.0f;
+				SectionTrackCount = NewSectionTrackCount;
+				SectionTrackWidth = ComputeTrackWidth(Context.AvailableWidth, SectionTrackCount, Context.CrossAxisSpacing);
+				LaneBottoms.SetNumZeroed(SectionTrackCount);
+				for (float& Bottom : LaneBottoms)
+				{
+					Bottom = CarryOver;
+				}
 			}
 		}
 		LastDepth = DisplayItem.Depth;
@@ -841,7 +930,7 @@ void UMasonryLayoutEngine::BuildLayout_Implementation(
 			NormalizeLanes();
 		}
 
-		const int32 Span = ResolveSpan(Layout, TrackCount);
+		const int32 Span = ResolveSpan(Layout, SectionTrackCount);
 		if (Layout.bFullRow)
 		{
 			NormalizeLanes();
@@ -852,7 +941,7 @@ void UMasonryLayoutEngine::BuildLayout_Implementation(
 		int32 BestLane = 0;
 		float BestCost = TNumericLimits<float>::Max();
 
-		for (int32 Lane = 0; Lane <= TrackCount - Span; ++Lane)
+		for (int32 Lane = 0; Lane <= SectionTrackCount - Span; ++Lane)
 		{
 			// Calculate the Y position if we placed the item starting at Lane.
 			// Because the item has width Span, it must sit on top of the tallest column in that range.
@@ -880,7 +969,7 @@ void UMasonryLayoutEngine::BuildLayout_Implementation(
 			if (const int32* PrevIndex = Context.PreviousSnapshot->ItemToPlacedIndex.Find(DisplayItem.Item))
 			{
 				const FVirtualFlowPlacedItem& PrevPlaced = Context.PreviousSnapshot->Items[*PrevIndex];
-				if (PrevPlaced.ColumnSpan == Span && PrevPlaced.ColumnStart + Span <= TrackCount)
+				if (PrevPlaced.ColumnSpan == Span && PrevPlaced.ColumnStart + Span <= SectionTrackCount)
 				{
 					float PrevCost = 0.0f;
 					for (int32 k = 0; k < Span; ++k)
@@ -896,10 +985,10 @@ void UMasonryLayoutEngine::BuildLayout_Implementation(
 			}
 		}
 
-		const float ItemWidth = (TrackWidth * Span) + Context.CrossAxisSpacing * FMath::Max(0, Span - 1);
+		const float ItemWidth = (SectionTrackWidth * Span) + Context.CrossAxisSpacing * FMath::Max(0, Span - 1);
 		EVirtualFlowHeightSource HeightSource;
 		const float ItemHeight = EstimatePaddedHeight(DisplayItem, ItemWidth, Context, &HeightSource);
-		const float ItemX = BestLane * (TrackWidth + Context.CrossAxisSpacing);
+		const float ItemX = BestLane * (SectionTrackWidth + Context.CrossAxisSpacing);
 		const float ItemY = BestCost > 0.0f ? BestCost + Context.MainAxisSpacing : 0.0f;
 
 		FVirtualFlowPlacedItem Placed;

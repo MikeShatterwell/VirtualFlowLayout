@@ -92,7 +92,7 @@ struct FVirtualFlowInputFlowParams
 
 /**
  * Lightweight snapshot of layout state consumed by PaintDesignerOverlay.
- * Gathered from SVirtualFlowView at paint time — no InputFlowDebugger dependency.
+ * Gathered from SVirtualFlowView at paint time, no InputFlowDebugger dependency.
  */
 struct FVirtualFlowDesignerDebugParams
 {
@@ -115,6 +115,15 @@ struct FVirtualFlowDesignerDebugParams
 	TSet<int32> RealizedIndices;
 
 	float NavigationScrollBuffer = 0.0f;
+
+	/** Number of columns/tracks used by the layout engine. */
+	int32 TrackCount = 1;
+
+	/** Horizontal spacing between columns. */
+	float CrossAxisSpacing = 0.0f;
+
+	/** Vertical spacing between rows. */
+	float MainAxisSpacing = 0.0f;
 
 	bool bIsHorizontal = false;
 };
@@ -177,7 +186,7 @@ struct VIRTUALFLOWLAYOUTS_API FVirtualFlowDebugPainter
 #if WITH_EDITOR
 	/**
 	 * Paints a lightweight debug overlay directly into the Slate paint buffer.
-	 * Used in the UMG Designer preview — no external plugin dependency.
+	 * Used in the UMG Designer preview, no external plugin dependency.
 	 *
 	 * Draws: layout item boxes (gray for virtual, gold for realized),
 	 * viewport clipping bounds, scroll position indicator, and a summary HUD.
