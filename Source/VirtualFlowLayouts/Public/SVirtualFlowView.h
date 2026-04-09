@@ -455,7 +455,7 @@ class VIRTUALFLOWLAYOUTS_API SVirtualFlowView : public SCompoundWidget
 {
 	friend class UVirtualFlowView;
 	friend class SVirtualFlowMinimap;
-#if !UE_BUILD_SHIPPING
+#if WITH_PLUGIN_INPUTFLOWDEBUGGER
 	friend class SVirtualFlowDebugPanel;
 #endif
 
@@ -746,7 +746,7 @@ private:
 	 */
 	float ComputeContainingSnapOffset(int32 TargetSnapshotIndex, EVirtualFlowScrollDestination Destination) const;
 
-#if !UE_BUILD_SHIPPING
+#if WITH_PLUGIN_INPUTFLOWDEBUGGER
 	void HandleInputFlowDrawOverlay(class UInputDebugSubsystem* Subsystem, class FInputFlowDrawAPI& DrawAPI) const;
 	void HandleInputFlowGatherLabels(class UInputDebugSubsystem* Subsystem, class FInputFlowLabelAPI& LabelAPI) const;
 
