@@ -44,6 +44,11 @@ void UVirtualFlowEntryWidgetExtension::BindToFlow(UVirtualFlowView* InOwningFlow
 	BroadcastStateToEntryWidget(EVirtualFlowInteractionSource::Code);
 }
 
+void UVirtualFlowEntryWidgetExtension::SetOwningFlowView(UVirtualFlowView* InOwningFlowView)
+{
+	OwningFlowView = InOwningFlowView;
+}
+
 void UVirtualFlowEntryWidgetExtension::SetSelected(const bool bInSelected, const EVirtualFlowInteractionSource InSource)
 {
 	UUserWidget* EntryWidget = GetEntryUserWidget();

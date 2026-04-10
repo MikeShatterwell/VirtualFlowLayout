@@ -19,7 +19,7 @@
 class SVirtualFlowView;
 class UInputDebugSubsystem;
 
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER 
 
 /*
 * Per-layer visualization toggles for the InputFlow overlay.

@@ -134,7 +134,7 @@ public:
 	/** Called by the view to initialize this extension when pulled from the object pool. */
 	void BindToFlow(UVirtualFlowView* InOwningFlowView, UObject* InItemObject, int32 InDepth, bool bInDesignPreview);
 
-	void SetOwningFlowView(UVirtualFlowView* InOwningFlowView) { OwningFlowView = InOwningFlowView; }
+	void SetOwningFlowView(UVirtualFlowView* InOwningFlowView);
 
 	bool HasOwningFlowView() const { return OwningFlowView.IsValid(); }
 

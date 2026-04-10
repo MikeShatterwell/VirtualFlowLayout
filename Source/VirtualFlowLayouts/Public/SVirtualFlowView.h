@@ -455,7 +455,7 @@ class VIRTUALFLOWLAYOUTS_API SVirtualFlowView : public SCompoundWidget
 {
 	friend class UVirtualFlowView;
 	friend class SVirtualFlowMinimap;
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER
 	friend class SVirtualFlowDebugPanel;
 #endif
 
@@ -746,7 +746,7 @@ private:
 	 */
 	float ComputeContainingSnapOffset(int32 TargetSnapshotIndex, EVirtualFlowScrollDestination Destination) const;
 
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER
 	void HandleInputFlowDrawOverlay(class UInputDebugSubsystem* Subsystem, class FInputFlowDrawAPI& DrawAPI) const;
 	void HandleInputFlowGatherLabels(class UInputDebugSubsystem* Subsystem, class FInputFlowLabelAPI& LabelAPI) const;
 
@@ -790,6 +790,13 @@ private:
 	 *  At runtime, repaints are driven by targeted Invalidate(Paint) calls
 	 *  to avoid making the entire subtree indirectly volatile. */
 	mutable bool bNeedsRepaint = true;
+
+	/** Ticks remaining before a forced full re-measurement.
+	 *  Entry widgets created during the first few ticks after construction may not
+	 *  report accurate desired sizes until Slate has arranged them. This countdown
+	 *  defers a forced invalidation of all cached measurements so the layout
+	 *  converges on correct heights. */
+	int32 PostConstructionRemeasureCountdown = 0;
 
 	// --- Pipeline data (rebuilt progressively each frame) ---
 	FVirtualFlowItemDataCache ItemDataCache;       // Cached Blueprint/interface item data

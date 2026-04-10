@@ -66,7 +66,7 @@ public class VirtualFlowLayouts : ModuleRules
 
 					if (IsPluginEnabled)
 					{
-						if (Target.Configuration != UnrealTargetConfiguration.Shipping)
+						if (Target.Configuration != UnrealTargetConfiguration.Shipping && Target.Type != TargetType.Server)
 						{
 							PrivateDependencyModuleNames.Add("InputFlowDebugger");
 							PublicDefinitions.Add("WITH_INPUT_FLOW_DEBUGGER=1");

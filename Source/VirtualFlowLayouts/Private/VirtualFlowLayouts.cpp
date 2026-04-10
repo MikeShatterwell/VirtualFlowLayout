@@ -2,7 +2,7 @@
 
 #include "VirtualFlowLayouts.h"
 
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER 
 // InputFlowDebugger
 #include <InputFlowDebugger.h>
 
@@ -11,11 +11,11 @@
 
 // Internal
 #include "SVirtualFlowDebugPanel.h"
-#endif // WITH_PLUGIN_INPUTFLOWDEBUGGER
+#endif // WITH_INPUT_FLOW_DEBUGGER 
 
 #define LOCTEXT_NAMESPACE "FVirtualFlowLayoutsModule"
 
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER 
 namespace VirtualFlowLayoutDebug
 {
 	const FName VirtualFlowDebugPanelName("VirtualFlowDebugPanel");
@@ -23,11 +23,11 @@ namespace VirtualFlowLayoutDebug
 
 	static bool bShowVirtualFlowDebugPanel = false;
 }
-#endif // WITH_PLUGIN_INPUTFLOWDEBUGGER
+#endif // WITH_INPUT_FLOW_DEBUGGER 
 
 void FVirtualFlowLayoutsModule::StartupModule()
 {
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER 
 	if (FInputFlowDebuggerModule::IsAvailable())
 	{
 		// Register the Custom Panel
@@ -84,12 +84,12 @@ void FVirtualFlowLayoutsModule::StartupModule()
 			MenuBuilder.EndSection();
 		});
 	}
-#endif // WITH_PLUGIN_INPUTFLOWDEBUGGER
+#endif // WITH_INPUT_FLOW_DEBUGGER 
 }
 
 void FVirtualFlowLayoutsModule::ShutdownModule()
 {
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER 
 	// Reset debug state to prevent stale references across module reload
 	FVirtualFlowDebugState::Get().bEnabled = false;
 	FVirtualFlowDebugState::Get().TargetView.Reset();
@@ -99,7 +99,7 @@ void FVirtualFlowLayoutsModule::ShutdownModule()
 		// Clean up the panel registration to prevent dangling references on module unload/reload
 		FInputFlowDebuggerModule::Get().UnregisterExternalOverlayPanel(VirtualFlowLayoutDebug::VirtualFlowDebugPanelName);
 	}
-#endif // WITH_PLUGIN_INPUTFLOWDEBUGGER
+#endif // WITH_INPUT_FLOW_DEBUGGER 
 }
 
 #undef LOCTEXT_NAMESPACE

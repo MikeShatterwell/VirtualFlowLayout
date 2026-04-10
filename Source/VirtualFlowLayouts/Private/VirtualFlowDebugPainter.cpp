@@ -6,7 +6,7 @@
 #include "VirtualFlowLayoutEngine.h"
 #include "VirtualFlowView.h"
 
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER 
 #include "SVirtualFlowDebugPanel.h"
 
 // InputFlowDebugger
@@ -697,7 +697,7 @@ void FVirtualFlowDebugPainter::DrawScrollBufferZones(
 	}
 }
 
-#endif // WITH_PLUGIN_INPUTFLOWDEBUGGER
+#endif // WITH_INPUT_FLOW_DEBUGGER 
 
 #if WITH_EDITOR
 // SlateCore

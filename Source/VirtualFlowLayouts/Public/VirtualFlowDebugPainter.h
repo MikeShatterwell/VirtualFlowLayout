@@ -15,7 +15,7 @@ struct FGeometry;
 class UVirtualFlowView;
 class FSlateWindowElementList;
 
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER 
 class FInputFlowDrawAPI;
 class FInputFlowLabelAPI;
 enum class EInputFlowVFLayer : uint16;
@@ -86,7 +86,7 @@ struct FVirtualFlowInputFlowParams
 	FString PendingActionLabel;
 };
 
-#endif // WITH_PLUGIN_INPUTFLOWDEBUGGER
+#endif // WITH_INPUT_FLOW_DEBUGGER 
 
 #if WITH_EDITOR
 
@@ -144,7 +144,7 @@ struct VIRTUALFLOWLAYOUTS_API FVirtualFlowDebugPainter
 {
 	FVirtualFlowDebugPainter() = delete;
 
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER 
 	/**
 	 * Renders layout boundaries, realized widget highlights, flow splines, and scroll
 	 * state to the InputFlowDebugger's global overlay via DrawAPI.
@@ -181,7 +181,7 @@ struct VIRTUALFLOWLAYOUTS_API FVirtualFlowDebugPainter
 		const FVirtualFlowInputFlowParams& Params,
 		const FGeometry& ViewportGeometry,
 		FInputFlowDrawAPI& DrawAPI);
-#endif // WITH_PLUGIN_INPUTFLOWDEBUGGER
+#endif // WITH_INPUT_FLOW_DEBUGGER 
 
 #if WITH_EDITOR
 	/**

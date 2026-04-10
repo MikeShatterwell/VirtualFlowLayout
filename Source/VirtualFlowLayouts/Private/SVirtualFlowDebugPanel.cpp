@@ -2,7 +2,7 @@
 
 #include "SVirtualFlowDebugPanel.h"
 
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER 
 
 // InputFlowDebugger
 #include <InputDebugSubsystem.h>
@@ -329,4 +329,4 @@ FString SVirtualFlowDebugPanel::GetViewDisplayName(const UVirtualFlowView* View)
 	return View->GetName();
 }
 
-#endif // WITH_PLUGIN_INPUTFLOWDEBUGGER
+#endif // WITH_INPUT_FLOW_DEBUGGER 

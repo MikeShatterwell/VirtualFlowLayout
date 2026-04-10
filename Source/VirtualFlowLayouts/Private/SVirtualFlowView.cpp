@@ -27,7 +27,7 @@
 #include <Styling/CoreStyle.h>
 
 // InputFlowDebugger
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER
 #include <InputDebugSubsystem.h>
 
 // Internal (only included when InputFlowDebugger is available)
@@ -742,13 +742,15 @@ void SVirtualFlowView::Construct(const FArguments& InArgs, UVirtualFlowView& InO
 		}
 	}
 #endif
+
+	PostConstructionRemeasureCountdown = 3;
 }
 
 SVirtualFlowView::~SVirtualFlowView()
 {
 	UE_LOG(LogVirtualFlow, Log, TEXT("[%hs] Destroying SVirtualFlowView (Owner=[%s])"),
 		__FUNCTION__, *GetNameSafe(OwnerWidget.Get()));
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER
 	if (OwnerWidget.IsValid())
 	{
 		if (const UGameInstance* GameInstance = OwnerWidget->GetGameInstance(); IsValid(GameInstance))
@@ -1296,6 +1298,21 @@ void SVirtualFlowView::Tick(const FGeometry& AllottedGeometry, const double InCu
 
 	// Phase 7: Measure realized widgets and feed back
 	const bool bMeasurementsChanged = MeasureAndFeedBack();
+
+	// Preview entries that use a measured size may need to be measured again
+#if WITH_EDITOR
+	if (PostConstructionRemeasureCountdown > 0 && OwnerWidget->IsDesignTime())
+	{
+		--PostConstructionRemeasureCountdown;
+		if (PostConstructionRemeasureCountdown == 0 && RealizedItemMap.Num() > 0)
+		{
+			UE_LOG(LogVirtualFlowLayout, Log,
+				TEXT("[%hs] Post-construction remeasure: invalidating all %d measurements"),
+				__FUNCTION__, LayoutCache.MeasuredItemHeights.Num());
+			InvalidateMeasurements(nullptr);
+		}
+	}
+#endif
 
 	// Phase 8: Restore focus after expansion (runs after realization so the widget exists)
 	const bool bFocusRestored = RestorePendingFocus();
@@ -3638,7 +3655,7 @@ FNavigationReply SVirtualFlowView::OnNavigation(const FGeometry& MyGeometry, con
 
 	// --- Detect simulation calls ---
 	bool bIsSimulation = false;
-#if WITH_PLUGIN_INPUTFLOWDEBUGGER
+#if WITH_INPUT_FLOW_DEBUGGER
 	bIsSimulation = InNavigationEvent.GetUserIndex() == UInputDebugSubsystem::SimulatedNavigationUserIndex;
 #endif
 
