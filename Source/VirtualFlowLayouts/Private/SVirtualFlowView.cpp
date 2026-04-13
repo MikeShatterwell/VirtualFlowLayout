@@ -14,6 +14,7 @@
 #include <Widgets/Layout/SBorder.h>
 #include <Widgets/Layout/SBox.h>
 #include <Widgets/Layout/SConstraintCanvas.h>
+#include <Widgets/SOverlay.h>
 #include <Widgets/Layout/SScrollBar.h>
 #include <Widgets/SBoxPanel.h>
 
@@ -676,15 +677,15 @@ void SVirtualFlowView::Construct(const FArguments& InArgs, UVirtualFlowView& InO
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			[
-				SAssignNew(Minimap, SVirtualFlowMinimap)
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			[
 				SAssignNew(ScrollBar, SScrollBar)
 				.Style(&ScrollBarStyleInstance)
 				.Orientation(Orient_Horizontal)
 				.OnUserScrolled(this, &SVirtualFlowView::HandleScrollBarScrolled)
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SAssignNew(Minimap, SVirtualFlowMinimap)
 			]
 		];
 	}
@@ -708,15 +709,15 @@ void SVirtualFlowView::Construct(const FArguments& InArgs, UVirtualFlowView& InO
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			[
-				SAssignNew(Minimap, SVirtualFlowMinimap)
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			[
 				SAssignNew(ScrollBar, SScrollBar)
 				.Style(&ScrollBarStyleInstance)
 				.Orientation(Orient_Vertical)
 				.OnUserScrolled(this, &SVirtualFlowView::HandleScrollBarScrolled)
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SAssignNew(Minimap, SVirtualFlowMinimap)
 			]
 		];
 	}
@@ -1326,6 +1327,9 @@ void SVirtualFlowView::Tick(const FGeometry& AllottedGeometry, const double InCu
 	// Phase 11: Push viewport proximity values to realized entries
 	UpdateViewportProximity();
 
+	// Phase 12: Pin sticky headers to the viewport leading edge
+	UpdateStickyHeaders();
+
 	// Request repaint if any phase did work
 	if (bDidDeferredWork || bMeasurementsChanged || bFocusRestored || bBufferScrollApplied || PendingRefresh != ERefreshStage::None || Realization.PendingMeasurementCount > 0)
 	{
@@ -1367,8 +1371,9 @@ void SVirtualFlowView::UpdateViewportMetrics(const FGeometry& AllottedGeometry)
 	const FVector2D LocalSize = AllottedGeometry.GetLocalSize();
 	const bool bHoriz = Axes.bHorizontal;
 
-	// Measure the cross-axis thickness of the scrollbar chrome.
-	// Vertical scrollbar -> thickness = width (.X).  Horizontal scrollbar -> thickness = height (.Y).
+	// Measure the cross-axis thickness of the scrollbar chrome (now subtracted
+	// from the viewport since the scrollbar sits beside the content rather than
+	// overlaying on top of it).
 	if (InteractionState.CachedScrollBarThickness <= 0.0f && ScrollBar.IsValid())
 	{
 		const FVector2D SBSize = ScrollBar->GetDesiredSize();
@@ -1380,51 +1385,9 @@ void SVirtualFlowView::UpdateViewportMetrics(const FGeometry& AllottedGeometry)
 		? (bHoriz ? Minimap->GetDesiredSize().Y : Minimap->GetDesiredSize().X)
 		: 0.0f;
 
-	// Scrollbar thickness reservation hysteresis with convergence gate.
-	//
-	// While measurements are actively converging (PendingMeasurementCount > 0),
-	// content main-axis extent is unreliable -- freeze the reservation state
-	// entirely to prevent reacting to transient swings from partial estimates.
-	//
-	// After each reservation flip, a cooldown prevents another flip for
-	// ScrollBarReservationCooldownFrames ticks, giving measurements time to
-	// converge at the new cross-axis extent.
-	const float ContentMainExtentForDecision = GetContentMainExtent();
-
-	// The main-axis extent is never reduced by chrome (chrome sits on the cross axis).
-	const float MainExtentForDecision = bHoriz ? FMath::Max(0.0f, LocalSize.X) : FMath::Max(0.0f, LocalSize.Y);
-
-	const bool bMeasurementsConverging = Realization.PendingMeasurementCount > 0;
-
-	if (InteractionState.ScrollBarReservationCooldown > 0)
-	{
-		--InteractionState.ScrollBarReservationCooldown;
-	}
-	else if (!bMeasurementsConverging)
-	{
-		if (!InteractionState.bScrollBarThicknessReserved)
-		{
-			if (ContentMainExtentForDecision > MainExtentForDecision && MainExtentForDecision > 0.0f)
-			{
-				UE_LOG(LogVirtualFlow, Verbose, TEXT("[%hs] Scrollbar reservation: OFF -> ON (content=%.1f > viewport=%.1f)"),
-					__FUNCTION__, ContentMainExtentForDecision, MainExtentForDecision);
-				InteractionState.bScrollBarThicknessReserved = true;
-				InteractionState.ScrollBarReservationCooldown = ScrollBarReservationCooldownFrames;
-			}
-		}
-		else
-		{
-			if (MainExtentForDecision > 0.0f && ContentMainExtentForDecision < MainExtentForDecision * ScrollBarReleaseThreshold)
-			{
-				UE_LOG(LogVirtualFlow, Verbose, TEXT("[%hs] Scrollbar reservation: ON -> OFF (content=%.1f < threshold=%.1f)"),
-					__FUNCTION__, ContentMainExtentForDecision, MainExtentForDecision * ScrollBarReleaseThreshold);
-				InteractionState.bScrollBarThicknessReserved = false;
-				InteractionState.ScrollBarReservationCooldown = ScrollBarReservationCooldownFrames;
-			}
-		}
-	}
-
-	const float ChromeThickness = (InteractionState.bScrollBarThicknessReserved && !bScrollBarForcedHidden)
+	// Scrollbar chrome thickness along the same cross-axis.
+	// The scrollbar also takes dedicated structural space (not overlaid).
+	const float ScrollBarThickness = (ScrollBar.IsValid() && ScrollBar->GetVisibility().IsVisible())
 		? InteractionState.CachedScrollBarThickness
 		: 0.0f;
 
@@ -1434,11 +1397,11 @@ void SVirtualFlowView::UpdateViewportMetrics(const FGeometry& AllottedGeometry)
 	if (bHoriz)
 	{
 		Viewport.Width = FMath::Max(0.0f, LocalSize.X);
-		Viewport.Height = FMath::Max(0.0f, LocalSize.Y - ChromeThickness - MinimapThickness);
+		Viewport.Height = FMath::Max(0.0f, LocalSize.Y - MinimapThickness - ScrollBarThickness);
 	}
 	else
 	{
-		Viewport.Width = FMath::Max(0.0f, LocalSize.X - ChromeThickness - MinimapThickness);
+		Viewport.Width = FMath::Max(0.0f, LocalSize.X - MinimapThickness - ScrollBarThickness);
 		Viewport.Height = FMath::Max(0.0f, LocalSize.Y);
 	}
 
@@ -1449,10 +1412,9 @@ void SVirtualFlowView::UpdateViewportMetrics(const FGeometry& AllottedGeometry)
 		: OwnerWidget->GetContentPadding().GetTotalSpaceAlong<Orient_Horizontal>();
 	Viewport.ContentCrossExtent = FMath::Max(1.0f, CrossExtent - CrossPadding);
 
-	// Cross-extent change tolerance: ignore changes smaller than the scrollbar
-	// thickness to prevent a scrollbar reservation flip from immediately
-	// triggering measurement invalidation.
-	const float CrossExtentChangeTolerance = FMath::Max(2.0f, InteractionState.CachedScrollBarThickness);
+	// Cross-extent change tolerance: ignore sub-pixel jitter to prevent
+	// unnecessary measurement invalidation from floating-point drift.
+	static constexpr float CrossExtentChangeTolerance = 2.0f;
 	if (Viewport.LastMeasuredContentCrossExtent < 0.0f)
 	{
 		// First frame, initialize without invalidating
@@ -1920,6 +1882,183 @@ void SVirtualFlowView::UpdateViewportProximity()
 				}
 			}
 		}
+	}
+}
+
+void SVirtualFlowView::UpdateStickyHeaders()
+{
+	// Helper: restore a realized item's render transform to its normal
+	// interpolation-only delta (undoing any sticky pin offset)
+	auto RestoreNormalTransform = [this](UObject* Item)
+	{
+		if (!IsValid(Item))
+		{
+			return;
+		}
+		const FRealizedPlacedItem* Realized = RealizedItemMap.Find(Item);
+		if (Realized == nullptr || !Realized->SlotBox.IsValid())
+		{
+			return;
+		}
+		const FVector2D& Delta = Realized->AnimatedLayoutPosition - Realized->CommittedSlotPosition;
+		if (!Delta.IsNearlyZero())
+		{
+			Realized->SlotBox->SetRenderTransform(FSlateRenderTransform(Delta));
+		}
+		else
+		{
+			Realized->SlotBox->SetRenderTransform(TOptional<FSlateRenderTransform>());
+		}
+	};
+
+	// Restore all transforms from the previous tick's stack before rebuilding.
+	for (const TWeakObjectPtr<UObject>& PrevItem : InteractionState.PreviousStickyHeaderItems)
+	{
+		RestoreNormalTransform(PrevItem.Get());
+	}
+	InteractionState.PreviousStickyHeaderItems.Reset();
+	InteractionState.ActiveStickyHeaders.Reset();
+
+	if (!OwnerWidget.IsValid() || !OwnerWidget->GetEnableStickyHeaders())
+	{
+		return;
+	}
+
+	if (LayoutCache.CurrentLayout.Items.IsEmpty())
+	{
+		return;
+	}
+
+	const float VisualOffset = GetVisualScrollOffset();
+	const float ViewportMainStart = VisualOffset;
+
+	// Build the depth-aware stack.
+	//
+	// Walk IndicesByTop in content order.  For each sticky header whose
+	// content-space main-start is at or above its depth-specific threshold,
+	// add it to the stack.
+	TArray<FVirtualFlowInteractionState::FActiveStickyHeader>& Stack = InteractionState.ActiveStickyHeaders;
+
+	for (const int32 SortedIdx : LayoutCache.CurrentLayout.IndicesByTop)
+	{
+		const FVirtualFlowPlacedItem& Placed = LayoutCache.CurrentLayout.Items[SortedIdx];
+		if (!Placed.Layout.bStickyHeader)
+		{
+			continue;
+		}
+
+		const float HeaderMainStart = GetItemMainStart(SortedIdx);
+
+		// Compute threshold using only entries at a shallower depth.
+		float StrictlyShallowerHeight = 0.0f;
+		for (const auto& E : Stack)
+		{
+			if (E.Depth < Placed.Depth)
+			{
+				StrictlyShallowerHeight += E.MainExtent;
+			}
+		}
+		const float StackThreshold = ViewportMainStart + StrictlyShallowerHeight;
+
+		if (HeaderMainStart > StackThreshold)
+		{
+			continue; // Not scrolled past yet, but a deeper header later may still qualify
+		}
+
+		// This header has scrolled past its stack slot.  Pop same-or-deeper entries.
+		while (!Stack.IsEmpty() && Stack.Last().Depth >= Placed.Depth)
+		{
+			Stack.Pop();
+		}
+
+		// Compute the main-axis extent (height + slot margins along main axis)
+		const float MainExtent = Axes.bHorizontal
+			? Placed.Width + Placed.Layout.SlotMargin.GetTotalSpaceAlong<Orient_Horizontal>()
+			: Placed.Height + Placed.Layout.SlotMargin.GetTotalSpaceAlong<Orient_Vertical>();
+
+		FVirtualFlowInteractionState::FActiveStickyHeader Entry;
+		Entry.Item = Placed.Item;
+		Entry.SnapshotIndex = SortedIdx;
+		Entry.Depth = Placed.Depth;
+		Entry.MainExtent = MainExtent;
+		Entry.PinOffset = 0.0f;
+		Stack.Add(MoveTemp(Entry));
+	}
+
+	if (Stack.IsEmpty())
+	{
+		return;
+	}
+
+	// Compute pin offsets with push-out in a single forward pass.
+	float StackTop = ViewportMainStart;
+	for (int32 StackIdx = 0; StackIdx < Stack.Num(); ++StackIdx)
+	{
+		FVirtualFlowInteractionState::FActiveStickyHeader& Entry = Stack[StackIdx];
+		const float NaturalMainStart = GetItemMainStart(Entry.SnapshotIndex);
+		Entry.PinOffset = FMath::Max(0.0f, StackTop - NaturalMainStart);
+
+		// Find the next pusher at depth <= this entry's depth
+		float NextPusherMainStart = FLT_MAX;
+		{
+			bool bFoundSelf = false;
+			for (const int32 SortedIdx : LayoutCache.CurrentLayout.IndicesByTop)
+			{
+				if (SortedIdx == Entry.SnapshotIndex)
+				{
+					bFoundSelf = true;
+					continue;
+				}
+				if (!bFoundSelf)
+				{
+					continue;
+				}
+				const FVirtualFlowPlacedItem& Placed = LayoutCache.CurrentLayout.Items[SortedIdx];
+				if (Placed.Layout.bStickyHeader && Placed.Depth <= Entry.Depth)
+				{
+					NextPusherMainStart = GetItemMainStart(SortedIdx);
+					break;
+				}
+			}
+		}
+
+		// Remaining stack height: this entry + all deeper entries below it
+		float RemainingStackHeight = Entry.MainExtent;
+		for (int32 j = StackIdx + 1; j < Stack.Num(); ++j)
+		{
+			RemainingStackHeight += Stack[j].MainExtent;
+		}
+
+		// If the pinned sub-stack would extend past the pusher, slide up
+		const float PinnedTop = NaturalMainStart + Entry.PinOffset;
+		if (PinnedTop + RemainingStackHeight > NextPusherMainStart)
+		{
+			const float Excess = (PinnedTop + RemainingStackHeight) - NextPusherMainStart;
+			Entry.PinOffset = FMath::Max(0.0f, Entry.PinOffset - Excess);
+		}
+
+		StackTop = NaturalMainStart + Entry.PinOffset + Entry.MainExtent;
+	}
+
+	// Apply render transforms and record items for next-frame cleanup.
+	for (const FVirtualFlowInteractionState::FActiveStickyHeader& Entry : Stack)
+	{
+		if (Entry.PinOffset <= 0.0f)
+		{
+			continue;
+		}
+
+		FRealizedPlacedItem* Realized = RealizedItemMap.Find(Entry.Item);
+		if (!Realized || !Realized->SlotBox.IsValid())
+		{
+			continue;
+		}
+
+		const FVector2D InterpolationDelta = Realized->AnimatedLayoutPosition - Realized->CommittedSlotPosition;
+		const FVector2D StickyDelta = Axes.OnMainAxis(Entry.PinOffset);
+		Realized->SlotBox->SetRenderTransform(FSlateRenderTransform(InterpolationDelta + StickyDelta));
+
+		InteractionState.PreviousStickyHeaderItems.Add(Entry.Item);
 	}
 }
 
@@ -2452,6 +2591,52 @@ void SVirtualFlowView::BuildDesiredVisibleSet(
 	OutDesiredSet.Reset();
 	OutVisibleOrder.Reserve(LayoutCache.CurrentLayout.Items.Num());
 
+	// When sticky headers are enabled, walk backward from the first visible sorted
+	// index to find all sticky headers that form the current pinned stack.
+	TArray<int32> ForcedStickySnapshotIndices;
+	if (OwnerWidget->GetEnableStickyHeaders())
+	{
+		int32 MinDepthSoFar = INT_MAX;
+		for (int32 SortedIdx = FMath::Clamp(StartSortedIndex, 0,
+				 LayoutCache.CurrentLayout.IndicesByTop.Num()) - 1;
+			 SortedIdx >= 0; --SortedIdx)
+		{
+			const int32 SnapIdx = LayoutCache.CurrentLayout.IndicesByTop[SortedIdx];
+			const FVirtualFlowPlacedItem& Placed = LayoutCache.CurrentLayout.Items[SnapIdx];
+			if (!Placed.Layout.bStickyHeader)
+			{
+				continue;
+			}
+			// Only include if this is a strictly shallower depth than any we've already collected.
+			// A header at depth D replaces all deeper (D+1, D+2...) entries that were closer
+			// to the viewport, so only strictly shallower headers are new stack entries.
+			if (Placed.Depth < MinDepthSoFar)
+			{
+				UObject* StickyItem = Placed.Item.Get();
+				if (IsValid(StickyItem) && !OutDesiredSet.Contains(StickyItem))
+				{
+					ForcedStickySnapshotIndices.Add(SnapIdx);
+					OutDesiredSet.Add(StickyItem);
+				}
+				MinDepthSoFar = Placed.Depth;
+				if (MinDepthSoFar == 0)
+				{
+					break;
+				}
+			}
+		}
+		// Collection order is deepest-first (found first when walking backward).
+		// Keep this order so that shallowest headers are appended last to OutVisibleOrder,
+		// giving them the highest canvas slot index and therefore painting on top.
+	}
+
+	// When sticky headers are enabled, items with bStickyHeader are not added to
+	// OutVisibleOrder by the main loop -- they are deferred to the post-pass so
+	// they always appear last in the SConstraintCanvas slot order (painting on
+	// top of normal items).  They are still added to OutDesiredSet and realized
+	// normally so that measurement and interpolation work.
+	TArray<int32> DeferredStickySnapshotIndices;
+
 	for (int32 SortedIndex = FMath::Clamp(StartSortedIndex, 0, LayoutCache.CurrentLayout.IndicesByTop.Num()); SortedIndex < LayoutCache.CurrentLayout.IndicesByTop.Num(); ++SortedIndex)
 	{
 		const int32 SnapshotIndex = LayoutCache.CurrentLayout.IndicesByTop[SortedIndex];
@@ -2468,8 +2653,25 @@ void SVirtualFlowView::BuildDesiredVisibleSet(
 		}
 
 		const FVirtualFlowPlacedItem& Placed = LayoutCache.CurrentLayout.Items[SnapshotIndex];
+		// Skip items already added by the sticky header pre-pass
+		if (OutDesiredSet.Contains(Placed.Item.Get()))
+		{
+			continue;
+		}
 		OutDesiredSet.Add(Placed.Item.Get());
-		OutVisibleOrder.Add(Placed.Item);
+
+		// Sticky header items are deferred to the post-pass for Z-order.
+		// We still realize them here so measurement and interpolation work,
+		// but they go into DeferredStickySnapshotIndices instead of OutVisibleOrder.
+		const bool bDeferForStickyZOrder = OwnerWidget->GetEnableStickyHeaders() && Placed.Layout.bStickyHeader;
+		if (bDeferForStickyZOrder)
+		{
+			DeferredStickySnapshotIndices.Add(SnapshotIndex);
+		}
+		else
+		{
+			OutVisibleOrder.Add(Placed.Item);
+		}
 
 		FRealizedPlacedItem& Realized = EnsureRealizedWidget(Placed, SnapshotIndex);
 		if (!Realized.SlotBox.IsValid())
@@ -2525,6 +2727,49 @@ void SVirtualFlowView::BuildDesiredVisibleSet(
 		{
 			Realized.SlotBox->SetRenderTransform(TOptional<FSlateRenderTransform>());
 		}
+	}
+
+	// Sticky header post-pass: append all sticky headers last so that
+	// SConstraintCanvas paints them on top of normal items (later slots win).
+	{
+		const FVirtualFlowLayoutSnapshot& SortLayout = LayoutCache.CurrentLayout;
+		DeferredStickySnapshotIndices.Sort([&SortLayout](const int32 A, const int32 B)
+		{
+			return SortLayout.Items[A].Depth > SortLayout.Items[B].Depth;
+		});
+	}
+
+	auto AppendStickyToVisibleOrder = [&](const int32 SnapIdx)
+	{
+		const FVirtualFlowPlacedItem& StickyPlaced = LayoutCache.CurrentLayout.Items[SnapIdx];
+		OutVisibleOrder.Add(StickyPlaced.Item);
+
+		FRealizedPlacedItem& Realized = EnsureRealizedWidget(StickyPlaced, SnapIdx);
+		if (!Realized.SlotBox.IsValid())
+		{
+			bOutRequiresCanvasRebuild = true;
+		}
+		else
+		{
+			bOutRequiresCanvasRebuild = bOutRequiresCanvasRebuild || !Realized.bAttachedToViewport;
+		}
+
+		// Force position initialization (no interpolation for sticky headers)
+		Realized.AnimatedLayoutPosition = Realized.TargetLayoutPosition;
+		Realized.LastAnimatedTickSequence = InteractionState.TickSequence;
+		if (!Realized.bHasAnimatedLayoutPosition)
+		{
+			Realized.bHasAnimatedLayoutPosition = true;
+		}
+	};
+
+	for (const int32 SnapIdx : ForcedStickySnapshotIndices)
+	{
+		AppendStickyToVisibleOrder(SnapIdx);
+	}
+	for (const int32 SnapIdx : DeferredStickySnapshotIndices)
+	{
+		AppendStickyToVisibleOrder(SnapIdx);
 	}
 }
 

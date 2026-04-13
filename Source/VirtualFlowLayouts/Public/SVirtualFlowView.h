@@ -187,6 +187,26 @@ struct FVirtualFlowInteractionState
 	// --- Right stick analog scrolling ---
 	/** Main-axis right stick deflection (-1..1) captured by OnAnalogValueChanged, consumed by AdvanceScrollState. */
 	float RightStickScrollInput = 0.0f;
+
+	// --- Sticky header tracking ---
+	/**
+	 * Tracks a single entry in the sticky-header stack.  The stack is rebuilt
+	 * every tick by UpdateStickyHeaders
+	 */
+	struct FActiveStickyHeader
+	{
+		TWeakObjectPtr<UObject> Item;
+		int32 SnapshotIndex = INDEX_NONE;
+		int32 Depth = 0;
+		float MainExtent = 0.0f;   // Main-axis slot size (height + margins)
+		float PinOffset = 0.0f;    // Render-transform offset applied this frame
+	};
+
+	/** Active sticky headers ordered shallowest-to-deepest.  Rebuilt each tick. */
+	TArray<FActiveStickyHeader> ActiveStickyHeaders;
+
+	/** Item pointers from the previous tick's stack, used to restore transforms. */
+	TArray<TWeakObjectPtr<UObject>> PreviousStickyHeaderItems;
 };
 
 /**
@@ -594,6 +614,12 @@ private:
 
 	/** Pushes viewport proximity values to realized entry widget extensions. */
 	void UpdateViewportProximity();
+
+	/**
+	 * Adjusts sticky header positions after realization so they pin to the
+	 * viewport's leading edge.
+	 */
+	void UpdateStickyHeaders();
 
 	/**
 	 * Detects when keyboard focus transitions to a new realized entry and scrolls

@@ -193,6 +193,15 @@ struct FVirtualFlowItemLayout
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Virtual Flow")
 	bool bLockExpansion = false;
 
+	/**
+	 * When true and the owning view has bEnableStickyHeaders enabled, this item
+	 * will pin to the viewport's leading edge (top for vertical, left for
+	 * horizontal) once scrolled past, remaining visible until the next sticky
+	 * header pushes it away.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Virtual Flow|Placement")
+	bool bStickyHeader = false;
+
 	friend bool operator==(const FVirtualFlowItemLayout& A, const FVirtualFlowItemLayout& B)
 	{
 		return A.ColumnCount == B.ColumnCount
@@ -216,7 +225,8 @@ struct FVirtualFlowItemLayout
 			&& A.ChildrenPresentation == B.ChildrenPresentation
 			&& A.bChildrenExpanded == B.bChildrenExpanded
 			&& A.bToggleExpansionOnClick == B.bToggleExpansionOnClick
-			&& A.bLockExpansion == B.bLockExpansion;
+			&& A.bLockExpansion == B.bLockExpansion
+			&& A.bStickyHeader == B.bStickyHeader;
 	}
 };
 

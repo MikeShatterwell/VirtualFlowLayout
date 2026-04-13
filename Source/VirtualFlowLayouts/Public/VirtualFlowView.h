@@ -748,6 +748,14 @@ private:
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Layout", meta = (ClampMin = 0.0))
 	float SectionSpacing = 32.0f;
 
+	/**
+	 * When true, items whose layout has bStickyHeader will pin to the
+	 * viewport's leading edge as the user scrolls past them.  The pinned
+	 * header remains visible until the next sticky header pushes it away.
+	 */
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Layout")
+	bool bEnableStickyHeaders = false;
+
 	/** When true, releasing the scroll wheel or touch drag will smoothly snap to the nearest row/section. */
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Scrolling")
 	bool bEnableScrollSnapping = false;
@@ -757,6 +765,7 @@ private:
 	EVirtualFlowScrollDestination ScrollSnapDestination = EVirtualFlowScrollDestination::Top;
 
 	float GetSectionSpacing() const { return SectionSpacing; }
+	bool GetEnableStickyHeaders() const { return bEnableStickyHeaders; }
 	bool GetEnableScrollSnapping() const { return bEnableScrollSnapping; }
 	EVirtualFlowScrollDestination GetScrollSnapDestination() const { return ScrollSnapDestination; }
 

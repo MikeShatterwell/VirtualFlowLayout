@@ -1956,6 +1956,10 @@ void UVirtualFlowView::ConfigurePreviewHeader(UVirtualFlowPreviewItem* Item, con
 
 	Layout.bChildrenExpanded = bDesignerPreviewGroupsStartExpanded;
 
+	// When sticky headers are enabled on the view, preview headers opt in
+	// automatically so the designer shows the pinning behaviour.
+	Layout.bStickyHeader = bEnableStickyHeaders;
+
 	Item->PreviewLayout = Layout;
 }
 
