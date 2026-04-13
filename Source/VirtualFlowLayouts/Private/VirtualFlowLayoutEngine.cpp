@@ -423,15 +423,20 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 		const float ItemWidth = Layout.bFullRow
 			? Context.AvailableWidth
 			: (SectionCellWidth * ColumnSpan) + Context.CrossAxisSpacing * FMath::Max(0, ColumnSpan - 1);
+		const bool bIsStrictHeight =
+			(Layout.HeightMode == EVirtualFlowItemHeightMode::SpecificHeight || Layout.HeightMode == EVirtualFlowItemHeightMode::AspectRatio);
 
 		if (Layout.bFullRow)
 		{
+			CommitBand();
 			ApplyPendingGap(Context.MainAxisSpacing);
 
 			const int32 RequestedRowSpan = FMath::Max(1, Layout.RowSpan);
 			EVirtualFlowHeightSource HeightSource;
 			const float EstimatedHeight = EstimatePaddedHeight(DisplayItem, ItemWidth, Context, &HeightSource);
-			const float ItemHeight = FMath::Max(EstimatedHeight, RowsToHeight(RequestedRowSpan, CellHeight, Context.MainAxisSpacing));
+			const float ItemHeight = bIsStrictHeight 
+							? EstimatedHeight 
+							: FMath::Max(EstimatedHeight, RowsToHeight(RequestedRowSpan, CellHeight, Context.MainAxisSpacing));
 			const int32 ConsumedRowSpan = FMath::Max(RequestedRowSpan, HeightToRowSpan(ItemHeight, CellHeight, Context.MainAxisSpacing));
 
 			FVirtualFlowPlacedItem Placed;
@@ -466,8 +471,9 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 		const float EstimatedHeight = EstimatePaddedHeight(DisplayItem, ItemWidth, Context, &HeightSource);
 		const int32 HeightDrivenRowSpan = HeightToRowSpan(EstimatedHeight, CellHeight, Context.MainAxisSpacing);
 		const int32 EffectiveRowSpan = FMath::Max(RequestedRowSpan, HeightDrivenRowSpan);
-		const float ItemHeight = RowsToHeight(EffectiveRowSpan, CellHeight, Context.MainAxisSpacing);
-
+		const float GridSnappedHeight = RowsToHeight(EffectiveRowSpan, CellHeight, Context.MainAxisSpacing);
+		const float ItemHeight = bIsStrictHeight ? EstimatedHeight : FMath::Max(EstimatedHeight, GridSnappedHeight);
+		
 		int32 LocalRow = 0;
 		int32 LocalColumn = 0;
 		FindPlacement(DisplayItem, ColumnSpan, EffectiveRowSpan, LocalRow, LocalColumn);
