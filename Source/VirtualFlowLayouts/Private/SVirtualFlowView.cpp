@@ -669,7 +669,7 @@ void SVirtualFlowView::Construct(const FArguments& InArgs, UVirtualFlowView& InO
 				SAssignNew(ViewportBorder, SBorder)
 				.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
 				.Padding(0.0f)
-				.Clipping(EWidgetClipping::ClipToBounds)
+				.Clipping(EWidgetClipping::Inherit)
 				[
 					SAssignNew(RealizedItemCanvas, SConstraintCanvas)
 				]
@@ -701,7 +701,7 @@ void SVirtualFlowView::Construct(const FArguments& InArgs, UVirtualFlowView& InO
 				SAssignNew(ViewportBorder, SBorder)
 				.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
 				.Padding(0.0f)
-				.Clipping(EWidgetClipping::ClipToBounds)
+				.Clipping(EWidgetClipping::Inherit)
 				[
 					SAssignNew(RealizedItemCanvas, SConstraintCanvas)
 				]
@@ -2649,6 +2649,19 @@ void SVirtualFlowView::BuildDesiredVisibleSet(
 		const float ItemMainEnd = GetItemMainEnd(SnapshotIndex);
 		if (ItemMainEnd < StartOffset)
 		{
+			if (OwnerWidget->GetEnableStickyHeaders())
+			{
+				const FVirtualFlowPlacedItem& GapPlaced = LayoutCache.CurrentLayout.Items[SnapshotIndex];
+				if (GapPlaced.Layout.bStickyHeader)
+				{
+					UObject* StickyItem = GapPlaced.Item.Get();
+					if (IsValid(StickyItem) && !OutDesiredSet.Contains(StickyItem))
+					{
+						ForcedStickySnapshotIndices.Add(SnapshotIndex);
+						OutDesiredSet.Add(StickyItem);
+					}
+				}
+			}
 			continue;
 		}
 
