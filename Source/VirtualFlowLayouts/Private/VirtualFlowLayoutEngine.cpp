@@ -34,7 +34,7 @@ namespace VirtualFlowLayoutEngineHelpers
 	}
 
 	static bool CanPlaceRect(
-		TBitArray<>& OccupancyGrid,
+		const TBitArray<>& OccupancyGrid,
 		const int32 Row,
 		const int32 Column,
 		const int32 ColumnSpan,
@@ -46,14 +46,15 @@ namespace VirtualFlowLayoutEngineHelpers
 			return false;
 		}
 
-		EnsureRowCount(OccupancyGrid, Row + RowSpan, TrackCount);
-		
+		const int32 TotalBits = OccupancyGrid.Num();
 		for (int32 RowIndex = Row; RowIndex < Row + RowSpan; ++RowIndex)
 		{
 			const int32 RowOffset = RowIndex * TrackCount;
 			for (int32 ColumnIndex = Column; ColumnIndex < Column + ColumnSpan; ++ColumnIndex)
 			{
-				if (OccupancyGrid[RowOffset + ColumnIndex])
+				const int32 BitIndex = RowOffset + ColumnIndex;
+				// Beyond the allocated grid is implicitly empty
+				if (BitIndex < TotalBits && OccupancyGrid[BitIndex])
 				{
 					return false;
 				}
@@ -318,6 +319,7 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 
 	TBitArray<> OccupancyGrid;
 	int32 BandUsedRowCount = 0;
+	int32 LastPlacedLocalRow = 0;
 	int32 GlobalRowCursor = 0;
 	float CursorY = 0.0f;
 	bool bHasPendingGap = false;
@@ -345,6 +347,7 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 		CursorY += RowsToHeight(BandUsedRowCount, CellHeight, Context.MainAxisSpacing);
 		GlobalRowCursor += BandUsedRowCount;
 		BandUsedRowCount = 0;
+		LastPlacedLocalRow = 0;
 		OccupancyGrid.Reset();
 		bHasPendingGap = true;
 	};
@@ -354,25 +357,29 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 		OutRow = INDEX_NONE;
 		OutColumn = INDEX_NONE;
 
+		const int32 SearchStartRow = bDensePacking ? 0 : LastPlacedLocalRow;
 		if (bPreferStablePlacement && Context.PreviousSnapshot)
 		{
 			if (const int32* PrevIndex = Context.PreviousSnapshot->ItemToPlacedIndex.Find(DisplayItem.Item))
 			{
 				const FVirtualFlowPlacedItem& PrevPlaced = Context.PreviousSnapshot->Items[*PrevIndex];
-				const int32 LocalPrevRow = PrevPlaced.RowStart - GlobalRowCursor;
 				if (PrevPlaced.ColumnSpan == ColumnSpan
-					&& PrevPlaced.RowSpan == RowSpan
-					&& LocalPrevRow >= 0
-					&& CanPlaceRect(OccupancyGrid, LocalPrevRow, PrevPlaced.ColumnStart, ColumnSpan, RowSpan, SectionTrackCount))
+					&& PrevPlaced.ColumnStart + ColumnSpan <= SectionTrackCount)
 				{
-					OutRow = LocalPrevRow;
-					OutColumn = PrevPlaced.ColumnStart;
-					return;
+					// Search downward from the normal start row, but only in the preferred column
+					for (int32 Row = SearchStartRow; ; ++Row)
+					{
+						if (CanPlaceRect(OccupancyGrid, Row, PrevPlaced.ColumnStart, ColumnSpan, RowSpan, SectionTrackCount))
+						{
+							OutRow = Row;
+							OutColumn = PrevPlaced.ColumnStart;
+							return;
+						}
+					}
 				}
 			}
 		}
 
-		const int32 SearchStartRow = bDensePacking ? 0 : BandUsedRowCount;
 		for (int32 Row = SearchStartRow; ; ++Row)
 		{
 			for (int32 Column = 0; Column <= SectionTrackCount - ColumnSpan; ++Column)
@@ -402,7 +409,7 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 		// Update per-section track count when entering a new section header
 		if (DisplayItem.Depth == 0)
 		{
-			SectionTrackCount = Context.ResolveSectionTrackCount(Layout);
+			SectionTrackCount = FMath::Max(1, Context.ResolveSectionTrackCount(Layout));
 			SectionCellWidth = bStretchToFit
 				? ComputeTrackWidth(Context.AvailableWidth, SectionTrackCount, Context.CrossAxisSpacing)
 				: FMath::Max(1.0f, CellSize.X);
@@ -434,10 +441,14 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 			const int32 RequestedRowSpan = FMath::Max(1, Layout.RowSpan);
 			EVirtualFlowHeightSource HeightSource;
 			const float EstimatedHeight = EstimatePaddedHeight(DisplayItem, ItemWidth, Context, &HeightSource);
-			const float ItemHeight = bIsStrictHeight 
+			const int32 HeightDrivenRowSpan = HeightToRowSpan(EstimatedHeight, CellHeight, Context.MainAxisSpacing);
+			const int32 EffectiveRowSpan = (RequestedRowSpan > 1)
+				? HeightDrivenRowSpan * RequestedRowSpan
+				: HeightDrivenRowSpan;
+			const float GridSnappedHeight = RowsToHeight(EffectiveRowSpan, CellHeight, Context.MainAxisSpacing);
+			const float ItemHeight = bIsStrictHeight
 							? EstimatedHeight 
-							: FMath::Max(EstimatedHeight, RowsToHeight(RequestedRowSpan, CellHeight, Context.MainAxisSpacing));
-			const int32 ConsumedRowSpan = FMath::Max(RequestedRowSpan, HeightToRowSpan(ItemHeight, CellHeight, Context.MainAxisSpacing));
+							: FMath::Max(EstimatedHeight, GridSnappedHeight);
 
 			FVirtualFlowPlacedItem Placed;
 			static_cast<FVirtualFlowDisplayItem&>(Placed) = DisplayItem;
@@ -445,7 +456,7 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 			Placed.ColumnStart = 0;
 			Placed.ColumnSpan = SectionTrackCount;
 			Placed.RowStart = GlobalRowCursor;
-			Placed.RowSpan = ConsumedRowSpan;
+			Placed.RowSpan = EffectiveRowSpan;
 			Placed.X = 0.0f;
 			Placed.Y = CursorY;
 			Placed.Width = ItemWidth;
@@ -454,7 +465,7 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 			OutSnapshot.Items.Add(MoveTemp(Placed));
 
 			CursorY += ItemHeight;
-			GlobalRowCursor += ConsumedRowSpan;
+			GlobalRowCursor += EffectiveRowSpan;
 			bHasPendingGap = true;
 
 			if (Layout.bBreakLineAfter)
@@ -470,7 +481,15 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 		EVirtualFlowHeightSource HeightSource;
 		const float EstimatedHeight = EstimatePaddedHeight(DisplayItem, ItemWidth, Context, &HeightSource);
 		const int32 HeightDrivenRowSpan = HeightToRowSpan(EstimatedHeight, CellHeight, Context.MainAxisSpacing);
-		const int32 EffectiveRowSpan = FMath::Max(RequestedRowSpan, HeightDrivenRowSpan);
+
+		// When RowSpan > 1 is explicitly requested, treat it as a multiplier on
+		// the base (height-driven) span so the item is visibly N-times taller
+		// than a single-row item.  When RowSpan == 1 (the default), keep the
+		// existing auto-sizing behaviour that grows to fit content.
+		const int32 EffectiveRowSpan = (RequestedRowSpan > 1)
+			? HeightDrivenRowSpan * RequestedRowSpan
+			: HeightDrivenRowSpan;
+
 		const float GridSnappedHeight = RowsToHeight(EffectiveRowSpan, CellHeight, Context.MainAxisSpacing);
 		const float ItemHeight = bIsStrictHeight ? EstimatedHeight : FMath::Max(EstimatedHeight, GridSnappedHeight);
 		
@@ -479,6 +498,7 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 		FindPlacement(DisplayItem, ColumnSpan, EffectiveRowSpan, LocalRow, LocalColumn);
 		OccupyRect(OccupancyGrid, LocalRow, LocalColumn, ColumnSpan, EffectiveRowSpan, SectionTrackCount);
 		BandUsedRowCount = FMath::Max(BandUsedRowCount, LocalRow + EffectiveRowSpan);
+		LastPlacedLocalRow = LocalRow;
 
 		FVirtualFlowPlacedItem Placed;
 		static_cast<FVirtualFlowDisplayItem&>(Placed) = DisplayItem;
