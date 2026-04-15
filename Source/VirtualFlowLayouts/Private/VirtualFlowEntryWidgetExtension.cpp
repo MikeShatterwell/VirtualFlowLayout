@@ -239,3 +239,21 @@ void UVirtualFlowEntryWidgetExtension::ScrollSelfIntoView(const EVirtualFlowScro
 	}
 	OwningFlowView->ScrollItemIntoView(ListItemObject.Get(), Destination);
 }
+
+void UVirtualFlowEntryWidgetExtension::NotifyClicked()
+{
+	if (!OwningFlowView.IsValid())
+	{
+		return;
+	}
+	OwningFlowView->HandleItemClicked(GetEntryUserWidget(), ListItemObject.Get(), /*bDoubleClick*/ false);
+}
+
+void UVirtualFlowEntryWidgetExtension::NotifyHovered(const bool bIsHovered)
+{
+	if (!OwningFlowView.IsValid())
+	{
+		return;
+	}
+	OwningFlowView->HandleItemHovered(GetEntryUserWidget(), ListItemObject.Get(), bIsHovered);
+}

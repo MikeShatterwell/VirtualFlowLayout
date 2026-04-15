@@ -102,6 +102,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Actions")
 	void ScrollSelfIntoView(EVirtualFlowScrollDestination Destination = EVirtualFlowScrollDestination::Nearest) const;
 
+	/**
+	 * Manually notifies the owning view that this entry was clicked.
+	 * Use when a child interactive widget (e.g. a button) handles input before the entry slot
+	 * sees it, but you still want the view's selection, expansion, focus, and click-event logic to run.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Actions")
+	void NotifyClicked();
+
+	/**
+	 * Manually notifies the owning view that this entry's hover state changed.
+	 * Use when a child interactive widget handles hover before the entry slot sees it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Virtual Flow|Actions")
+	void NotifyHovered(const bool bIsHovered);
+
 	// --- Nested entry management ---
 	// These are relevant if the bound Item has children and the Item's presentation mode is 'NestedInEntry'
 
