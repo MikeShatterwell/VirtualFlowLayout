@@ -42,6 +42,17 @@ enum class EVirtualFlowDesignerPreviewDataSource : uint8
 	BlueprintFunction UMETA(DisplayName = "Blueprint Function")
 };
 
+UENUM(BlueprintType)
+enum class EVirtualFlowViewFocusPolicy : uint8
+{
+	/** When the view receives focus, focus the first focusable entry widget (top-left / start of scroll axis). */
+	FocusFirstItem UMETA(DisplayName = "Focus First Item"),
+	/** When the view receives focus, restore focus to the last focused entry widget. Falls back to first if none. */
+	RestoreLastFocused UMETA(DisplayName = "Restore Last Focused"),
+	/** Do not automatically redirect focus to an entry widget when the view receives focus. */
+	None UMETA(DisplayName = "None"),
+};
+
 /*
  * Style struct for SVirtualFlowMinimap, exposed in UVirtualFlowView
  */
@@ -257,6 +268,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Focus")
 	bool FocusItem(UObject* InItem, EVirtualFlowScrollDestination Destination = EVirtualFlowScrollDestination::Center);
 
+	/**
+	 * Returns the first focusable item in display order, or nullptr if the list is empty.
+	 * This is the item closest to the top-left (or start of scroll axis) that can receive focus.
+	 */
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Focus")
+	UObject* GetFirstFocusableItem() const;
+
+	/**
+	 * Returns the first focusable entry widget currently realized in the view.
+	 * Convenience wrapper that resolves the first focusable item and returns its widget.
+	 * Returns nullptr if no focusable items exist or the first item is not currently realized.
+	 */
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Focus")
+	UUserWidget* GetFirstFocusableEntryWidget() const;
+
 	/** Sets the absolute scroll offset in pixels, clamping to legal bounds. */
 	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Scrolling")
 	void SetScrollOffset(float InScrollOffsetPx);
@@ -362,6 +388,7 @@ public:
 	float GetNavigationRepeatDelay() const { return NavigationRepeatDelay; }
 	float GetNavigationScrollBuffer() const { return NavigationScrollBuffer; }
 	bool GetFocusSelectedItemWhenVisible() const { return bFocusSelectedItemWhenVisible; }
+	EVirtualFlowViewFocusPolicy GetViewFocusPolicy() const { return ViewFocusPolicy; }
 	bool GetFocusCollapsingItemIfFocusedDescendantBecomesHidden() const { return bFocusCollapsingItemIfFocusedDescendantBecomesHidden; }
 	int32 GetNumColumns() const { return DefaultNumColumns; }
 	float GetColumnSpacing() const { return ColumnSpacing; }
@@ -673,6 +700,12 @@ private:
 
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus")
 	bool bFocusSelectedItemWhenVisible = true;
+
+	/**
+	 * Controls what happens when the VirtualFlowView itself receives focus
+	 */
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus")
+	EVirtualFlowViewFocusPolicy ViewFocusPolicy = EVirtualFlowViewFocusPolicy::RestoreLastFocused;
 
 	/**
 	 * Buffer zone (in pixels) at the start and end of the viewport (along the

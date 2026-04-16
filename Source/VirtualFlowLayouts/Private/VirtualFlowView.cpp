@@ -1130,6 +1130,32 @@ bool UVirtualFlowView::FocusItem(UObject* InItem, EVirtualFlowScrollDestination 
 	return MyFlowView.IsValid() ? MyFlowView->TryFocusItem(InItem, Destination) : false;
 }
 
+UObject* UVirtualFlowView::GetFirstFocusableItem() const
+{
+	if (!MyFlowView.IsValid())
+	{
+		return nullptr;
+	}
+
+	const TArray<TWeakObjectPtr<UObject>>& FocusableItems =
+		MyFlowView->FlattenedModel.FocusableItemsInDisplayOrder;
+
+	for (const TWeakObjectPtr<UObject>& ItemPtr : FocusableItems)
+	{
+		if (UObject* Item = ItemPtr.Get())
+		{
+			return Item;
+		}
+	}
+	return nullptr;
+}
+
+UUserWidget* UVirtualFlowView::GetFirstFocusableEntryWidget() const
+{
+	UObject* FirstItem = GetFirstFocusableItem();
+	return IsValid(FirstItem) ? GetFirstWidgetForItem(FirstItem) : nullptr;
+}
+
 void UVirtualFlowView::SetScrollOffset(float InScrollOffsetPx)
 {
 	if (MyFlowView.IsValid())

@@ -4060,6 +4060,51 @@ FNavigationReply SVirtualFlowView::OnNavigation(const FGeometry& MyGeometry, con
 	return FNavigationReply::Custom(FNavigationDelegate());
 }
 
+FReply SVirtualFlowView::OnFocusReceived(const FGeometry& MyGeometry, const FFocusEvent& InFocusEvent)
+{
+	if (!OwnerWidget.IsValid())
+	{
+		return FReply::Unhandled();
+	}
+
+	const EVirtualFlowViewFocusPolicy Policy = OwnerWidget->GetViewFocusPolicy();
+	if (Policy == EVirtualFlowViewFocusPolicy::None)
+	{
+		return FReply::Unhandled();
+	}
+
+	// Determine target item based on policy
+	UObject* TargetItem = nullptr;
+
+	switch (Policy) {
+	case EVirtualFlowViewFocusPolicy::FocusFirstItem:
+		TargetItem = OwnerWidget->GetFirstFocusableItem();
+		break;
+	case EVirtualFlowViewFocusPolicy::RestoreLastFocused:
+		TargetItem = OwnerWidget->GetLastFocusedItem().Get();
+		break;
+	case EVirtualFlowViewFocusPolicy::None:
+		break;
+	}
+
+	if (!IsValid(TargetItem))
+	{
+		return FReply::Unhandled();
+	}
+
+	UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] View received focus (Cause=%d, Policy=%d), redirecting to item [%s]"),
+		__FUNCTION__, static_cast<int32>(InFocusEvent.GetCause()), static_cast<int32>(Policy), *GetNameSafe(TargetItem));
+
+	// If the target is already realized, focus it directly.
+	// Otherwise, scroll it into view and defer the focus.
+	if (!TryFocusRealizedItem(TargetItem))
+	{
+		TryFocusItem(TargetItem, EVirtualFlowScrollDestination::Nearest);
+	}
+
+	return FReply::Handled();
+}
+
 FReply SVirtualFlowView::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
 {
 	if (!OwnerWidget.IsValid())
