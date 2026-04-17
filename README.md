@@ -8,7 +8,7 @@
 
 ## Key Features
 
-*   **UI Virtualization:** Only realizes widgets currently visible within the viewport and reuses them in a pool.
+*   **UI Virtualization:** Only realizes widgets currently visible within the scrollable viewport and reuses them in a pool. Supports vertical and horizontal scrolling.
 *   **Hierarchical Support:** Trees with variable expansion states.
 *   **Heterogeneous Widgets:** Supports widgets of different classes and different layout requirements within the same list.
 *   **Extensible Layout Engines:** Swap layout strategies (List, Tile, Masonry, Block Grid) by swapping `UVirtualFlowLayoutEngine` instances.
