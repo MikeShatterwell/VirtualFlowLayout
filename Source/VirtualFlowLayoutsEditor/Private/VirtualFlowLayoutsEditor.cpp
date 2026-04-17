@@ -12,13 +12,14 @@ void FVirtualFlowLayoutsEditorModule::StartupModule()
 {
 	IUMGEditorModule& UMGEditorModule = FModuleManager::LoadModuleChecked<IUMGEditorModule>("UMGEditor");
 
-	DetailCustomization = FVirtualFlowViewDetailCustomization::MakeInstance();
-	UMGEditorModule.AddWidgetCustomizationExtender(DetailCustomization.ToSharedRef());
+	// TODO: Fix the MVVM extension integration
+	/*DetailCustomization = FVirtualFlowViewDetailCustomization::MakeInstance();
+	UMGEditorModule.AddWidgetCustomizationExtender(DetailCustomization.ToSharedRef());*/
 }
 
 void FVirtualFlowLayoutsEditorModule::ShutdownModule()
 {
-	DetailCustomization.Reset();
+	//DetailCustomization.Reset();
 }
 
 IMPLEMENT_MODULE(FVirtualFlowLayoutsEditorModule, VirtualFlowLayoutsEditor)

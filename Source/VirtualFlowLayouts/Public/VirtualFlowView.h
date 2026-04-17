@@ -612,7 +612,7 @@ private:
 	int32 DesignerPreviewSeed = 1234;
 
 	/** The absolute scroll offset to apply when previewing the layout in the UMG designer. */
-	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (ClampMin = 0.0, UIMin = 0.0, UIMax = 2000.0, SupportDynamicSliderMaxValue = "true"))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (ClampMin = 0.0f, UIMin = 0.0f))
 	float DesignerPreviewScrollOffset = 0.0f;
 
 	/**
