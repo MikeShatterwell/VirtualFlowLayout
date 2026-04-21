@@ -1644,15 +1644,24 @@ void SVirtualFlowView::RefreshRealizationIfNeeded()
 	TSet<UObject*> DesiredSet;
 	bool bHasInterpolatingEntries = false;
 	bool bRequiresCanvasRebuild = false;
-	BuildDesiredVisibleSet(VisibleOrder, DesiredSet, bHasInterpolatingEntries, bRequiresCanvasRebuild);
+	bool bHasDeferredConstructions = false;
+	BuildDesiredVisibleSet(VisibleOrder, DesiredSet, bHasInterpolatingEntries, bRequiresCanvasRebuild, bHasDeferredConstructions);
 
 	SyncRealizedItemsToDesiredSet(VisibleOrder, DesiredSet, bRequiresCanvasRebuild);
 
-	UE_LOG(LogVirtualFlowLayout, Verbose, TEXT("[%hs] Realization complete: %d desired, %d realized, Interpolating=%d, CanvasRebuild=%d"),
-		__FUNCTION__, DesiredSet.Num(), RealizedItemMap.Num(), bHasInterpolatingEntries, bRequiresCanvasRebuild);
+	UE_LOG(LogVirtualFlowLayout, Verbose, TEXT("[%hs] Realization complete: %d desired, %d realized, Interpolating=%d, CanvasRebuild=%d, DeferredConstructions=%d"),
+		__FUNCTION__, DesiredSet.Num(), RealizedItemMap.Num(), bHasInterpolatingEntries, bRequiresCanvasRebuild, bHasDeferredConstructions);
 
 	InteractionState.bEntryInterpolationActive = bHasInterpolatingEntries;
 	ClearRefreshStage(ERefreshStage::RefreshVisible);
+
+	// If the construction budget was exhausted, re-request so remaining
+	// deferred items are constructed on subsequent frames.
+	if (bHasDeferredConstructions)
+	{
+		RequestRefresh(ERefreshStage::RefreshVisible);
+	}
+
 	if (InteractionState.bEntryInterpolationActive)
 	{
 		bNeedsRepaint = true;
@@ -2555,11 +2564,13 @@ void SVirtualFlowView::BuildDesiredVisibleSet(
 	TArray<TWeakObjectPtr<UObject>>& OutVisibleOrder,
 	TSet<UObject*>& OutDesiredSet,
 	bool& bOutHasInterpolatingEntries,
-	bool& bOutRequiresCanvasRebuild)
+	bool& bOutRequiresCanvasRebuild,
+	bool& bOutHasDeferredConstructions)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
 
 	bOutHasInterpolatingEntries = false;
+	bOutHasDeferredConstructions = false;
 	bOutRequiresCanvasRebuild = Realization.LayoutGeneration != Realization.LastCanvasBuiltFromLayoutGeneration;
 
 	const float CurrentOffset = ScrollController.GetOffset();
@@ -2637,62 +2648,40 @@ void SVirtualFlowView::BuildDesiredVisibleSet(
 	// normally so that measurement and interpolation work.
 	TArray<int32> DeferredStickySnapshotIndices;
 
-	for (int32 SortedIndex = FMath::Clamp(StartSortedIndex, 0, LayoutCache.CurrentLayout.IndicesByTop.Num()); SortedIndex < LayoutCache.CurrentLayout.IndicesByTop.Num(); ++SortedIndex)
+	// ---------------------------------------------------------------------------
+	// Construction budget
+	// ---------------------------------------------------------------------------
+	const int32 ConstructionBudget = OwnerWidget->GetMaxConstructionsPerTick();
+	const float ViewportCenter = CurrentOffset + GetViewportMainExtent() * 0.5f;
+
+	// Returns true when EnsureRealizedWidget will need to construct a new widget
+	// (pool acquire or CreateWidget) for this placed item.  False when the item
+	// already has a live widget of the correct class and the call is a cheap update.
+	auto WillNeedWidgetConstruction = [this](const FVirtualFlowPlacedItem& Placed) -> bool
 	{
-		const int32 SnapshotIndex = LayoutCache.CurrentLayout.IndicesByTop[SortedIndex];
-		const float ItemMainStart = GetItemMainStart(SnapshotIndex);
-		if (ItemMainStart > EndOffset)
+		const FRealizedPlacedItem* Existing = RealizedItemMap.Find(Placed.Item);
+		if (Existing == nullptr || !Existing->WidgetObject.IsValid() || Existing->EntryClass.Get() != Placed.EntryClass.Get())
 		{
-			break;
+			return true;
 		}
 
-		const float ItemMainEnd = GetItemMainEnd(SnapshotIndex);
-		if (ItemMainEnd < StartOffset)
-		{
-			if (OwnerWidget->GetEnableStickyHeaders())
-			{
-				const FVirtualFlowPlacedItem& GapPlaced = LayoutCache.CurrentLayout.Items[SnapshotIndex];
-				if (GapPlaced.Layout.bStickyHeader)
-				{
-					UObject* StickyItem = GapPlaced.Item.Get();
-					if (IsValid(StickyItem) && !OutDesiredSet.Contains(StickyItem))
-					{
-						ForcedStickySnapshotIndices.Add(SnapshotIndex);
-						OutDesiredSet.Add(StickyItem);
-					}
-				}
-			}
-			continue;
-		}
+		return false;
+	};
 
-		const FVirtualFlowPlacedItem& Placed = LayoutCache.CurrentLayout.Items[SnapshotIndex];
-		// Skip items already added by the sticky header pre-pass
-		if (OutDesiredSet.Contains(Placed.Item.Get()))
-		{
-			continue;
-		}
-		OutDesiredSet.Add(Placed.Item.Get());
+	// Precompute the displayed item for any pending FocusItem action so we can
+	// bypass the construction budget for it.
+	const UObject* PendingFocusDisplayedItem = nullptr;
+	if (InteractionState.PendingAction.Type == FDeferredViewAction::EType::FocusItem
+		&& InteractionState.PendingAction.TargetItem.IsValid())
+	{
+		UObject* ActionTarget = InteractionState.PendingAction.TargetItem.Get();
+		const UObject* DisplayedOwner = NavigationPolicy.ResolveOwningDisplayedItem(ActionTarget);
+		PendingFocusDisplayedItem = IsValid(DisplayedOwner) ? DisplayedOwner : ActionTarget;
+	}
 
-		// Sticky header items are deferred to the post-pass for Z-order.
-		// We still realize them here so measurement and interpolation work,
-		// but they go into DeferredStickySnapshotIndices instead of OutVisibleOrder.
-		const bool bDeferForStickyZOrder = OwnerWidget->GetEnableStickyHeaders() && Placed.Layout.bStickyHeader;
-		if (bDeferForStickyZOrder)
-		{
-			DeferredStickySnapshotIndices.Add(SnapshotIndex);
-		}
-		else
-		{
-			OutVisibleOrder.Add(Placed.Item);
-		}
-
-		FRealizedPlacedItem& Realized = EnsureRealizedWidget(Placed, SnapshotIndex);
-		if (!Realized.SlotBox.IsValid())
-		{
-			bOutRequiresCanvasRebuild = true;
-			continue;
-		}
-
+	// Shared interpolation + render-transform update for realized items.
+	auto ProcessRealizedInterpolation = [&](FRealizedPlacedItem& Realized)
+	{
 		// Interpolation
 		if (!OwnerWidget->GetLayoutEntryInterpolationEnabled() || !Realized.bHasAnimatedLayoutPosition)
 		{
@@ -2739,6 +2728,132 @@ void SVirtualFlowView::BuildDesiredVisibleSet(
 		else
 		{
 			Realized.SlotBox->SetRenderTransform(TOptional<FSlateRenderTransform>());
+		}
+	};
+
+	// Items that need widget construction, collected during the main loop and
+	// processed afterward in middle-out order subject to the per-tick budget.
+	struct FPendingConstruction
+	{
+		int32 SnapshotIndex;
+		float DistanceFromViewportCenter;
+	};
+	TArray<FPendingConstruction> PendingConstructions;
+
+	// Main visibility loop
+	for (int32 SortedIndex = FMath::Clamp(StartSortedIndex, 0, LayoutCache.CurrentLayout.IndicesByTop.Num()); SortedIndex < LayoutCache.CurrentLayout.IndicesByTop.Num(); ++SortedIndex)
+	{
+		const int32 SnapshotIndex = LayoutCache.CurrentLayout.IndicesByTop[SortedIndex];
+		const float ItemMainStart = GetItemMainStart(SnapshotIndex);
+		if (ItemMainStart > EndOffset)
+		{
+			break;
+		}
+
+		const float ItemMainEnd = GetItemMainEnd(SnapshotIndex);
+		if (ItemMainEnd < StartOffset)
+		{
+			if (OwnerWidget->GetEnableStickyHeaders())
+			{
+				const FVirtualFlowPlacedItem& GapPlaced = LayoutCache.CurrentLayout.Items[SnapshotIndex];
+				if (GapPlaced.Layout.bStickyHeader)
+				{
+					UObject* StickyItem = GapPlaced.Item.Get();
+					if (IsValid(StickyItem) && !OutDesiredSet.Contains(StickyItem))
+					{
+						ForcedStickySnapshotIndices.Add(SnapshotIndex);
+						OutDesiredSet.Add(StickyItem);
+					}
+				}
+			}
+			continue;
+		}
+
+		const FVirtualFlowPlacedItem& Placed = LayoutCache.CurrentLayout.Items[SnapshotIndex];
+		// Skip items already added by the sticky header pre-pass
+		if (OutDesiredSet.Contains(Placed.Item.Get()))
+		{
+			continue;
+		}
+		OutDesiredSet.Add(Placed.Item.Get());
+
+		// Sticky header items are deferred to the post-pass
+		const bool bDeferForStickyZOrder = OwnerWidget->GetEnableStickyHeaders() && Placed.Layout.bStickyHeader;
+
+		// Focus targets also bypass the budget
+		const bool bIsPendingFocusTarget = PendingFocusDisplayedItem != nullptr
+			&& Placed.Item.Get() == PendingFocusDisplayedItem;
+
+		// If this non-sticky item needs expensive widget construction and the
+		// budget is active, defer it to the middle-out construction phase.
+		if (!bDeferForStickyZOrder && !bIsPendingFocusTarget && ConstructionBudget > 0 && WillNeedWidgetConstruction(Placed))
+		{
+			const float ItemCenter = (ItemMainStart + ItemMainEnd) * 0.5f;
+			PendingConstructions.Add({ SnapshotIndex, FMath::Abs(ItemCenter - ViewportCenter) });
+			continue;
+		}
+
+		// Fast path: item already has a realized widget (no construction cost),
+		// or is a sticky header, or the budget is disabled.
+		if (bDeferForStickyZOrder)
+		{
+			DeferredStickySnapshotIndices.Add(SnapshotIndex);
+		}
+		else
+		{
+			OutVisibleOrder.Add(Placed.Item);
+		}
+
+		FRealizedPlacedItem& Realized = EnsureRealizedWidget(Placed, SnapshotIndex);
+		if (!Realized.SlotBox.IsValid())
+		{
+			bOutRequiresCanvasRebuild = true;
+			continue;
+		}
+
+		ProcessRealizedInterpolation(Realized);
+	}
+
+	// ---------------------------------------------------------------------------
+	// Budget-limited construction phase (middle-out priority)
+	//
+	// Items collected above are sorted so that entries closest to the viewport
+	// center are constructed first.  This ensures the user sees the most
+	// relevant content immediately while overscan entries fill in over
+	// subsequent frames.
+	// ---------------------------------------------------------------------------
+	if (!PendingConstructions.IsEmpty())
+	{
+		PendingConstructions.Sort([](const FPendingConstruction& A, const FPendingConstruction& B)
+		{
+			return A.DistanceFromViewportCenter < B.DistanceFromViewportCenter;
+		});
+
+		const int32 ToConstruct = FMath::Min(PendingConstructions.Num(), ConstructionBudget);
+		for (int32 Idx = 0; Idx < ToConstruct; ++Idx)
+		{
+			const int32 SnapIdx = PendingConstructions[Idx].SnapshotIndex;
+			const FVirtualFlowPlacedItem& Placed = LayoutCache.CurrentLayout.Items[SnapIdx];
+
+			OutVisibleOrder.Add(Placed.Item);
+
+			FRealizedPlacedItem& Realized = EnsureRealizedWidget(Placed, SnapIdx);
+			if (!Realized.SlotBox.IsValid())
+			{
+				bOutRequiresCanvasRebuild = true;
+				continue;
+			}
+
+			ProcessRealizedInterpolation(Realized);
+		}
+
+		// Items beyond the budget remain in OutDesiredSet (preventing release
+		// of any stale realized state) but are not in OutVisibleOrder and have
+		// no realized widget yet.  Signal the caller to re-request RefreshVisible
+		// so they get constructed on subsequent frames.
+		if (PendingConstructions.Num() > ToConstruct)
+		{
+			bOutHasDeferredConstructions = true;
 		}
 	}
 
@@ -2809,40 +2924,88 @@ void SVirtualFlowView::SyncRealizedItemsToDesiredSet(
 
 	if (bRequiresCanvasRebuild)
 	{
-		UE_LOG(LogVirtualFlowLayout, Verbose, TEXT("[%hs] Canvas rebuild: clearing %d children, re-adding %d visible items"),
-			__FUNCTION__, RealizedItemCanvas->GetChildren()->Num(), VisibleOrder.Num());
-		RealizedItemCanvas->ClearChildren();
-		for (auto& Pair : RealizedItemMap)
+		// Incremental append fast path
+		const bool bLayoutUnchanged = Realization.LayoutGeneration == Realization.LastCanvasBuiltFromLayoutGeneration;
+		bool bCanAppendIncrementally = bLayoutUnchanged;
+
+		if (bCanAppendIncrementally)
 		{
-			Pair.Value.bAttachedToViewport = false;
-		}
-		for (const TWeakObjectPtr<UObject>& ItemPtr : VisibleOrder)
-		{
-			FRealizedPlacedItem* Realized = RealizedItemMap.Find(ItemPtr);
-			if (!Realized || !Realized->SlotBox.IsValid())
+			// Verify no attached items were removed from the desired set.
+			for (const auto& Pair : RealizedItemMap)
 			{
-				continue;
+				if (Pair.Value.bAttachedToViewport && !DesiredSet.Contains(Pair.Key.Get()))
+				{
+					bCanAppendIncrementally = false;
+					break;
+				}
+			}
+		}
+
+		if (bCanAppendIncrementally)
+		{
+			// Append only newly realized items that are not yet attached.
+			int32 AppendedCount = 0;
+			for (const TWeakObjectPtr<UObject>& ItemPtr : VisibleOrder)
+			{
+				FRealizedPlacedItem* Realized = RealizedItemMap.Find(ItemPtr);
+				if (!Realized || !Realized->SlotBox.IsValid() || Realized->bAttachedToViewport)
+				{
+					continue;
+				}
+
+				RealizedItemCanvas->AddSlot()
+					.Anchors(FAnchors(0.0f, 0.0f))
+					.Alignment(FVector2D(0.0f, 0.0f))
+					.AutoSize(true)
+					.Offset(FMargin(Realized->AnimatedLayoutPosition.X, Realized->AnimatedLayoutPosition.Y, 0.0f, 0.0f))
+					[
+						Realized->SlotBox.ToSharedRef()
+					];
+
+				Realized->CommittedSlotPosition = Realized->AnimatedLayoutPosition;
+				Realized->SlotBox->SetRenderTransform(TOptional<FSlateRenderTransform>());
+				Realized->bAttachedToViewport = true;
+				++AppendedCount;
 			}
 
-			RealizedItemCanvas->AddSlot()
-				.Anchors(FAnchors(0.0f, 0.0f))
-				.Alignment(FVector2D(0.0f, 0.0f))
-				.AutoSize(true)
-				.Offset(FMargin(Realized->AnimatedLayoutPosition.X, Realized->AnimatedLayoutPosition.Y, 0.0f, 0.0f))
-				[
-					Realized->SlotBox.ToSharedRef()
-				];
-
-			// Record the position baked into the slot offset so that the
-			// interpolation path can apply only the delta as a render transform.
-			Realized->CommittedSlotPosition = Realized->AnimatedLayoutPosition;
-			// Clear any residual render transform from a previous interpolation.
-			Realized->SlotBox->SetRenderTransform(TOptional<FSlateRenderTransform>());
-			Realized->bAttachedToViewport = true;
+			UE_LOG(LogVirtualFlowLayout, Verbose, TEXT("[%hs] Incremental canvas append: added %d slots (total %d children)"),
+				__FUNCTION__, AppendedCount, RealizedItemCanvas->GetChildren()->Num());
 		}
+		else
+		{
+			// Full rebuild: Z-order or item set changed.
+			UE_LOG(LogVirtualFlowLayout, Verbose, TEXT("[%hs] Canvas rebuild: clearing %d children, re-adding %d visible items"),
+				__FUNCTION__, RealizedItemCanvas->GetChildren()->Num(), VisibleOrder.Num());
+			RealizedItemCanvas->ClearChildren();
+			for (auto& Pair : RealizedItemMap)
+			{
+				Pair.Value.bAttachedToViewport = false;
+			}
+			for (const TWeakObjectPtr<UObject>& ItemPtr : VisibleOrder)
+			{
+				FRealizedPlacedItem* Realized = RealizedItemMap.Find(ItemPtr);
+				if (Realized == nullptr || !Realized->SlotBox.IsValid())
+				{
+					continue;
+				}
 
-		ReleaseInvisibleItems(DesiredSet);
-		Realization.LastCanvasBuiltFromLayoutGeneration = Realization.LayoutGeneration;
+				RealizedItemCanvas->AddSlot()
+					.Anchors(FAnchors(0.0f, 0.0f))
+					.Alignment(FVector2D(0.0f, 0.0f))
+					.AutoSize(true)
+					.Offset(FMargin(Realized->AnimatedLayoutPosition.X, Realized->AnimatedLayoutPosition.Y, 0.0f, 0.0f))
+					[
+						Realized->SlotBox.ToSharedRef()
+					];
+
+				Realized->CommittedSlotPosition = Realized->AnimatedLayoutPosition;
+				Realized->SlotBox->SetRenderTransform(TOptional<FSlateRenderTransform>());
+				Realized->bAttachedToViewport = true;
+			}
+
+			ReleaseInvisibleItems(DesiredSet);
+			Realization.LastCanvasBuiltFromLayoutGeneration = Realization.LayoutGeneration;
+		}
 	}
 }
 
@@ -3760,6 +3923,11 @@ FReply SVirtualFlowView::OnMouseButtonDown(const FGeometry& MyGeometry, const FP
 	UE_LOG(LogVirtualFlowInput, VeryVerbose, TEXT("[%hs] Button=%s"), __FUNCTION__, *MouseEvent.GetEffectingButton().ToString());
 	if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
 	{
+		if (!OwnerWidget->GetEnableRightClickScrolling())
+		{
+			return SCompoundWidget::OnMouseButtonDown(MyGeometry, MouseEvent);
+		}
+
 		if (!ViewportBorder.IsValid() || !SVirtualFlowViewHelpers::ToAbsoluteRect(ViewportBorder->GetCachedGeometry()).ContainsPoint(MouseEvent.GetScreenSpacePosition()))
 		{
 			return SCompoundWidget::OnMouseButtonDown(MyGeometry, MouseEvent);

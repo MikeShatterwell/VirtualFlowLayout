@@ -685,7 +685,8 @@ private:
 		TArray<TWeakObjectPtr<UObject>>& OutVisibleOrder,
 		TSet<UObject*>& OutDesiredSet,
 		bool& bOutHasInterpolatingEntries,
-		bool& bOutRequiresCanvasRebuild);
+		bool& bOutRequiresCanvasRebuild,
+		bool& bOutHasDeferredConstructions);
 
 	/** Realizes missing items and updates interpolation for items in the desired set. */
 	void SyncRealizedItemsToDesiredSet(

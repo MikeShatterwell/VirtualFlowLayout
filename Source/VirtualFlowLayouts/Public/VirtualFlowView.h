@@ -371,7 +371,9 @@ public:
 	bool GetToggleSelectionOnClickInMultiSelect() const { return bToggleSelectionOnClickInMultiSelect; }
 	float GetOverscanPx() const { return OverscanPx; }
 	float GetDefaultEstimatedEntryHeight() const { return DefaultEstimatedEntryHeight; }
+	int32 GetMaxConstructionsPerTick() const { return MaxConstructionsPerTick; }
 	float GetWheelScrollAmount() const { return WheelScrollAmount; }
+	bool GetEnableRightClickScrolling() const { return bEnableRightClickScrolling; }
 	bool GetSmoothScrollEnabled() const { return bSmoothScrollEnabled; }
 	float GetSmoothScrollSpeed() const { return SmoothScrollSpeed; }
 	bool GetLayoutEntryInterpolationEnabled() const { return bLayoutEntryInterpolationEnabled; }
@@ -639,7 +641,7 @@ private:
 	int32 DesignerPreviewSeed = 1234;
 
 	/** The absolute scroll offset to apply when previewing the layout in the UMG designer. */
-	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (ClampMin = 0.0f, UIMin = 0.0f))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (ClampMin = 0.0, UIMin = 0.0, UIMax = 2000.0, SupportDynamicSliderMaxValue = "true"))
 	float DesignerPreviewScrollOffset = 0.0f;
 
 	/**
@@ -766,8 +768,23 @@ private:
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Virtualization", meta = (ClampMin = 1.0))
 	float MaxMeasurementsPerTick = 4.0f;
 
+	/**
+	 * Caps entry widget construction per frame to avoid realization hitches when
+	 * the pool is cold or after a large scroll jump. Widgets closest to the
+	 * viewport center are constructed first; remaining entries fill in over
+	 * subsequent frames. A higher value gives a more complete viewport on the
+	 * first frame but increases worst-case frametime.
+	 * Set to 0 to disable the budget (construct everything in one frame).
+	 */
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Virtualization", meta = (ClampMin = 0))
+	int32 MaxConstructionsPerTick = 8;
+
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Input", meta = (ClampMin = 0.0))
 	float WheelScrollAmount = 96.0f;
+
+	/** When true, holding right mouse button and dragging pans the view along the scroll axis. */
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Input")
+	bool bEnableRightClickScrolling = true;
 
 	/** When true, scroll-to-item and wheel scroll animate smoothly instead of snapping. */
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Scrolling")
