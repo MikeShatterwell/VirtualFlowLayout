@@ -9,6 +9,7 @@
 #include <Curves/CurveFloat.h>
 
 // Slate
+#include <Framework/Application/SlateUser.h>
 #include <Framework/Application/NavigationConfig.h>
 #include <Framework/Application/SlateApplication.h>
 #include <Widgets/Layout/SBorder.h>
@@ -36,8 +37,6 @@
 #endif
 
 // Internal
-#include <Framework/Application/SlateUser.h>
-
 #include "SVirtualFlowEntrySlot.h"
 #include "SVirtualFlowMinimap.h"
 #include "VirtualFlowDebugPainter.h"
