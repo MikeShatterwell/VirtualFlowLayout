@@ -36,6 +36,8 @@
 #endif
 
 // Internal
+#include <Framework/Application/SlateUser.h>
+
 #include "SVirtualFlowEntrySlot.h"
 #include "SVirtualFlowMinimap.h"
 #include "VirtualFlowDebugPainter.h"
@@ -86,11 +88,16 @@ namespace SVirtualFlowViewHelpers
 
 uint32 SVirtualFlowView::GetOwnerSlateUserIndex() const
 {
+	
 	if (OwnerWidget.IsValid())
 	{
-		if (const ULocalPlayer* LP = OwnerWidget->GetOwningLocalPlayer())
+		if (const ULocalPlayer* LP = OwnerWidget->GetOwningLocalPlayer(); IsValid(LP))
 		{
-			return LP->GetControllerId();
+			TSharedPtr<FSlateUser> User = FSlateApplication::Get().GetUser(LP->GetPlatformUserIndex());
+			if (User.IsValid())
+			{
+				return User->GetUserIndex();
+			}
 		}
 	}
 	return 0;
