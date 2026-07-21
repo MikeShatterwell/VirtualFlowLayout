@@ -1335,6 +1335,7 @@ void SVirtualFlowView::Tick(const FGeometry& AllottedGeometry, const double InCu
 
 	// Phase 12: Pin sticky headers to the viewport leading edge
 	UpdateStickyHeaders();
+	UpdateActiveSection();
 
 	// Request repaint if any phase did work
 	if (bDidDeferredWork || bMeasurementsChanged || bFocusRestored || bBufferScrollApplied || PendingRefresh != ERefreshStage::None || Realization.PendingMeasurementCount > 0)
@@ -4732,4 +4733,42 @@ float SVirtualFlowView::ComputeContainingSnapOffset(const int32 TargetSnapshotIn
 	}
 
 	return -1.0f;
+}
+
+void SVirtualFlowView::UpdateActiveSection()
+{
+	const FVirtualFlowLayoutSnapshot& Layout = LayoutCache.CurrentLayout;
+	if (!OwnerWidget.IsValid() || Layout.IndicesByTop.IsEmpty())
+	{
+		return;
+	}
+
+	const float MaxOffset = GetMaxScrollOffset();
+	const float VisualOffset = GetVisualScrollOffset();
+	const float Progress = (MaxOffset > KINDA_SMALL_NUMBER)
+		? FMath::Clamp(VisualOffset / MaxOffset, 0.0f, 1.0f)
+		: 0.0f;
+	const float RefLine = Progress + GetViewportMainExtent();
+
+	UObject* ActiveSection = nullptr;
+	for (const int32 SnapshotIndex : Layout.IndicesByTop)
+	{
+		const FVirtualFlowPlacedItem& Placed = Layout.Items[SnapshotIndex];
+		const bool bIsHeader = Placed.Depth == 0 && (Placed.ColumnStart == 0 || Placed.Layout.bFullRow);
+		if (!bIsHeader)
+		{
+			continue;
+		}
+		if (GetItemMainStart(SnapshotIndex) > RefLine)
+		{
+			break;
+		}
+		ActiveSection = Placed.Item.Get();
+	}
+
+	if (ActiveSection != InteractionState.LastActiveSection.Get())
+	{
+		InteractionState.LastActiveSection = ActiveSection;
+		OwnerWidget->OnActiveSectionChanged.Broadcast(ActiveSection);
+	}
 }

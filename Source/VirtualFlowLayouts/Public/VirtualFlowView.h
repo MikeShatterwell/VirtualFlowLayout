@@ -31,6 +31,8 @@ class UWidget;
 class UVirtualFlowEntryWidgetExtension;
 class UVirtualFlowPreviewItem;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnVirtualFlowActiveSectionChanged, UObject*, SectionItem);
+
 UENUM(BlueprintType)
 enum class EVirtualFlowDesignerPreviewDataSource : uint8
 {
@@ -433,6 +435,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "VirtualFlow|Events")
 	FOnVirtualFlowItemExpansionEvent OnItemExpansionChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "VirtualFlow|Events")
+	FOnVirtualFlowActiveSectionChanged OnActiveSectionChanged;
 
 	// --- Interaction handlers (called by SVirtualFlowEntrySlot) ---
 

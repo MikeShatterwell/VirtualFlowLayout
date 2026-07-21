@@ -207,6 +207,9 @@ struct FVirtualFlowInteractionState
 
 	/** Item pointers from the previous tick's stack, used to restore transforms. */
 	TArray<TWeakObjectPtr<UObject>> PreviousStickyHeaderItems;
+
+	/** Cached item representing the active section header (active meaning scrolled into view) */
+	TWeakObjectPtr<UObject> LastActiveSection;
 };
 
 /**
@@ -774,6 +777,11 @@ private:
 	 * @return The clamped snap offset, or -1 if no snap candidate contains the target.
 	 */
 	float ComputeContainingSnapOffset(int32 TargetSnapshotIndex, EVirtualFlowScrollDestination Destination) const;
+
+	/*
+	 * Determines the active section header based on the current scroll offset and updates the InteractionState.LastActiveSection.
+	 */
+	void UpdateActiveSection();
 
 #if WITH_INPUT_FLOW_DEBUGGER
 	void HandleInputFlowDrawOverlay(class UInputDebugSubsystem* Subsystem, class FInputFlowDrawAPI& DrawAPI) const;
