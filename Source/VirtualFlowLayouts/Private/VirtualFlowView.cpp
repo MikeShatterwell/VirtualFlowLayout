@@ -1130,6 +1130,18 @@ bool UVirtualFlowView::FocusItem(UObject* InItem, EVirtualFlowScrollDestination 
 	return MyFlowView.IsValid() ? MyFlowView->TryFocusItem(InItem, Destination) : false;
 }
 
+bool UVirtualFlowView::FocusSection(UObject* SectionHeader, EVirtualFlowScrollDestination Destination)
+{
+	if (!IsValid(SectionHeader))
+	{
+		return false;
+	}
+
+	EnsureItemAncestorsExpanded(SectionHeader);
+
+	return MyFlowView.IsValid() ? MyFlowView->TryFocusSection(SectionHeader, Destination) : false;
+}
+
 UObject* UVirtualFlowView::GetFirstFocusableItem() const
 {
 	if (!MyFlowView.IsValid())
@@ -1167,6 +1179,16 @@ void UVirtualFlowView::SetScrollOffset(float InScrollOffsetPx)
 float UVirtualFlowView::GetScrollOffset() const
 {
 	return MyFlowView.IsValid() ? MyFlowView->GetScrollOffset() : 0.0f;
+}
+
+UObject* UVirtualFlowView::GetSectionForItem(UObject* InItem) const
+{
+	return MyFlowView.IsValid() ? MyFlowView->FindContainingSectionHeader(InItem) : nullptr;
+}
+
+UObject* UVirtualFlowView::GetActiveSection() const
+{
+	return MyFlowView.IsValid() ? MyFlowView->InteractionState.LastActiveSection.Get() : nullptr;
 }
 
 FVirtualFlowItemLayout UVirtualFlowView::GetResolvedFlowItemLayout(UObject* InItem) const

@@ -293,6 +293,29 @@ public:
 	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Scrolling")
 	float GetScrollOffset() const;
 
+	// --- Sections ---
+
+	/**
+	 * Resolves the section header that contains the given item.
+	 * Returns the item itself when it is a section header, its root ancestor
+	 * for hierarchical data, or the nearest preceding header for flat data.
+	 * Returns nullptr when the item is not currently placed in the layout.
+	 */
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Sections")
+	UObject* GetSectionForItem(UObject* InItem) const;
+
+	/**
+	 * Returns the currently active section header (the last value broadcast via OnActiveSectionChanged)
+	 */
+	UFUNCTION(BlueprintPure, Category = "VirtualFlow|Sections")
+	UObject* GetActiveSection() const;
+
+	/**
+	 * Scrolls the section header into view
+	 */
+	UFUNCTION(BlueprintCallable, Category = "VirtualFlow|Sections")
+	bool FocusSection(UObject* SectionHeader, EVirtualFlowScrollDestination Destination = EVirtualFlowScrollDestination::Top);
+
 	// --- Queries (layout, hierarchy, realized widgets) ---
 
 	/** Returns the configured default column count (the DefaultNumColumns property). */
@@ -646,7 +669,7 @@ private:
 	int32 DesignerPreviewSeed = 1234;
 
 	/** The absolute scroll offset to apply when previewing the layout in the UMG designer. */
-	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (ClampMin = 0.0, UIMin = 0.0))
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Preview", meta = (ClampMin = 0.0, UIMin = 0.0, UIMax = 2000.0, SupportDynamicSliderMaxValue = "true"))
 	float DesignerPreviewScrollOffset = 0.0f;
 
 	/**

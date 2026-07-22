@@ -132,6 +132,14 @@ struct FDeferredViewAction
 	EType Type = EType::None;
 	TWeakObjectPtr<UObject> TargetItem;
 
+	/** Failed focus attempts on a realized, visible target. FocusItem actions
+	 *  degrade to scroll-only completion once MaxFocusAttempts is reached, so a
+	 *  misconfigured entry (no focusable widget anywhere in its tree) cannot
+	 *  pin the action alive forever -- a live action suppresses idle snap and
+	 *  buffer-zone scrolling. */
+	int32 FocusAttempts = 0;
+	static constexpr int32 MaxFocusAttempts = 8;
+
 	bool IsValid() const
 	{
 		return Type != EType::None && TargetItem.IsValid();
@@ -140,6 +148,7 @@ struct FDeferredViewAction
 	{
 		Type = EType::None;
 		TargetItem.Reset();
+		FocusAttempts = 0;
 	}
 };
 
@@ -183,6 +192,19 @@ struct FVirtualFlowInteractionState
 	 * to restore focus to the item's preferred focus target.
 	 */
 	TWeakObjectPtr<UObject> PendingFocusRestoreItem;
+
+	// --- View-level focus forwarding ---
+	/**
+	 * Set when the view itself received keyboard focus but no entry target
+	 * could be resolved yet (e.g. focus arrived before SetListItems, or before
+	 * the first tick built the display model). While armed -- and while the
+	 * view still holds keyboard focus -- ForwardPendingViewFocus hands focus
+	 * to the policy target as soon as one exists, mirroring ListView
+	 * behaviour. Disarmed by OnFocusLost if focus moves elsewhere first.
+	 */
+	bool bPendingViewFocusForward = false;
+	/** Focus cause captured when the forward was armed, replayed on handoff. */
+	EFocusCause PendingViewFocusCause = EFocusCause::SetDirectly;
 
 	// --- Right stick analog scrolling ---
 	/** Main-axis right stick deflection (-1..1) captured by OnAnalogValueChanged, consumed by AdvanceScrollState. */
@@ -471,8 +493,8 @@ struct FLayoutRebuildContext
  * ## Frame pipeline
  *
  *   AdvanceScrollState  -> RebuildModelIfNeeded  -> RebuildLayoutIfNeeded
- *     -> RefreshRealizationIfNeeded -> ResolveDeferredActions -> MeasureAndFeedBack
- *       -> SynchronizeChrome
+ *     -> RefreshRealizationIfNeeded -> ForwardPendingViewFocus -> ResolveDeferredActions
+ *       -> MeasureAndFeedBack -> SynchronizeChrome
  */
 class VIRTUALFLOWLAYOUTS_API SVirtualFlowView : public SCompoundWidget
 {
@@ -523,6 +545,15 @@ public:
 	/** Requests focus for the target item, scrolling it into view first if needed. */
 	bool TryFocusItem(UObject* InItem, EVirtualFlowScrollDestination Destination);
 
+	/**
+	 * Requests focus for a section: scrolls the HEADER into view (Destination
+	 * applies to the header) and focuses the section's preferred focus target --
+	 * the header itself when focusable, otherwise the first focusable item in
+	 * the section. Falls back to scroll-only travel when the section has no
+	 * focusable content.
+	 */
+	bool TryFocusSection(UObject* SectionHeader, EVirtualFlowScrollDestination Destination);
+
 	/** Sets the scroll offset of the view in pixels, clamping to legal bounds and applying overscroll as needed. */
 	void SetScrollOffset(float InScrollOffsetPx);
 	float GetScrollOffset() const { return ScrollController.GetOffset(); }
@@ -550,6 +581,7 @@ public:
 	virtual FReply OnAnalogValueChanged(const FGeometry& MyGeometry, const FAnalogInputEvent& InAnalogInputEvent) override;
 	virtual FNavigationReply OnNavigation(const FGeometry& MyGeometry, const FNavigationEvent& InNavigationEvent) override;
 	virtual FReply OnFocusReceived(const FGeometry& MyGeometry, const FFocusEvent& InFocusEvent) override;
+	virtual void OnFocusLost(const FFocusEvent& InFocusEvent) override;
 	virtual bool SupportsKeyboardFocus() const override { return true; }
 	// End SCompoundWidget overrides
 
@@ -642,6 +674,22 @@ private:
 	 * measurement are complete and the entry's preferred focus target exists.
 	 */
 	bool RestorePendingFocus();
+
+	/**
+	 * Resolves the item that should receive focus when the view itself is
+	 * focused, per the owner's ViewFocusPolicy. RestoreLastFocused falls back
+	 * to the first focusable item when no last-focused item exists.
+	 */
+	UObject* ResolveViewFocusPolicyTarget() const;
+
+	/**
+	 * Hands view-level focus to an entry once one can be resolved.
+	 * Runs each tick while InteractionState.bPendingViewFocusForward is armed:
+	 * if the view still holds keyboard focus and a policy target now exists,
+	 * the target is focused directly (when realized) or deferred via
+	 * TryFocusItem (which scrolls it into view and retries until focus lands).
+	 */
+	void ForwardPendingViewFocus();
 
 	// ------------------------------------------------------------------
 	// Refresh stage helpers
@@ -779,9 +827,49 @@ private:
 	float ComputeContainingSnapOffset(int32 TargetSnapshotIndex, EVirtualFlowScrollDestination Destination) const;
 
 	/*
-	 * Determines the active section header based on the current scroll offset and updates the InteractionState.LastActiveSection.
+	 * Determines the active section header and updates InteractionState.LastActiveSection,
+	 * broadcasting the owner's OnActiveSectionChanged on transitions.
+	 *
+	 * A focused entry takes priority: while a realized entry holds keyboard
+	 * focus, its containing section is active. Otherwise the active section is
+	 * derived from the scroll offset via a progress-scaled reference line.
 	 */
 	void UpdateActiveSection();
+
+	/**
+	 * Resolves the section header that contains the given item.
+	 *
+	 * Resolution order:
+	 *   1. Hierarchy: if the item (or its owning displayed item) has ancestors
+	 *      in the display model, its ROOT ancestor is the section header --
+	 *      exact for hierarchical data, no placement heuristics involved.
+	 *   2. Flat data: if the item is itself a section header (see
+	 *      IsSectionHeaderIndex) it is returned directly; otherwise walks
+	 *      backward through IndicesByTop for the nearest preceding header.
+	 *
+	 * Returns nullptr when the item is not placed or no header precedes it.
+	 */
+	UObject* FindContainingSectionHeader(UObject* InItem) const;
+
+	/**
+	 * True when the placed item at SnapshotIndex is a section header.
+	 * When any placed item carries an explicit FVirtualFlowItemLayout::bIsSectionHeader
+	 * tag, tagged items are authoritative. Otherwise falls back to the legacy
+	 * placement heuristic (depth-0 row start / full-row) -- which is ambiguous
+	 * in flat single-column or multi-column lists, where leaves also start
+	 * depth-0 rows. Tag headers explicitly in those setups.
+	 */
+	bool IsSectionHeaderIndex(int32 SnapshotIndex) const;
+
+	/**
+	 * Resolves the widget-focus entry point for a section: the header itself
+	 * when its realized entry exposes a keyboard-focusable widget, otherwise
+	 * the first focusable item (in display order) whose containing section is
+	 * the header. Unrealized headers cannot have their Slate tree inspected and
+	 * resolve to the member path. Returns nullptr when the section has no
+	 * focusable content at all.
+	 */
+	UObject* ResolveSectionFocusTarget(UObject* SectionHeader) const;
 
 #if WITH_INPUT_FLOW_DEBUGGER
 	void HandleInputFlowDrawOverlay(class UInputDebugSubsystem* Subsystem, class FInputFlowDrawAPI& DrawAPI) const;
@@ -820,8 +908,15 @@ private:
 
 	/** Staged invalidation bitmask -- replaces individual dirty booleans. */
 	ERefreshStage PendingRefresh = ERefreshStage::RebuildData | ERefreshStage::RebuildLayout | ERefreshStage::RefreshVisible | ERefreshStage::Repaint;
+	
 	/** True when the minimap has force-hidden the scrollbar. */
 	bool bScrollBarForcedHidden = false;
+	
+	/** True when any placed item in the current layout is explicitly tagged
+	 *  bIsSectionHeader. Cached by FinalizeLayoutBuild; when set, explicit
+	 *  tags take precedence over the placement heuristic in IsSectionHeaderIndex. */
+	bool bLayoutHasExplicitSectionHeaders = false;
+	
 	/** Tracks whether any stage has been pending since last paint.
 	 *  Only consumed by ComputeVolatility in the editor Designer overlay path.
 	 *  At runtime, repaints are driven by targeted Invalidate(Paint) calls

@@ -202,6 +202,13 @@ struct FVirtualFlowItemLayout
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Virtual Flow|Placement")
 	bool bStickyHeader = false;
 
+	/**
+	 * Marks this item as a section header for active-section tracking
+	 * (OnActiveSectionChanged / GetSectionForItem / GetActiveSection)
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Virtual Flow|Placement")
+	bool bIsSectionHeader = false;
+
 	friend bool operator==(const FVirtualFlowItemLayout& A, const FVirtualFlowItemLayout& B)
 	{
 		return A.ColumnCount == B.ColumnCount
@@ -226,7 +233,8 @@ struct FVirtualFlowItemLayout
 			&& A.bChildrenExpanded == B.bChildrenExpanded
 			&& A.bToggleExpansionOnClick == B.bToggleExpansionOnClick
 			&& A.bLockExpansion == B.bLockExpansion
-			&& A.bStickyHeader == B.bStickyHeader;
+			&& A.bStickyHeader == B.bStickyHeader
+			&& A.bIsSectionHeader == B.bIsSectionHeader;
 	}
 };
 

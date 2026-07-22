@@ -87,7 +87,6 @@ namespace SVirtualFlowViewHelpers
 
 uint32 SVirtualFlowView::GetOwnerSlateUserIndex() const
 {
-	
 	if (OwnerWidget.IsValid())
 	{
 		if (const ULocalPlayer* LP = OwnerWidget->GetOwningLocalPlayer(); IsValid(LP))
@@ -833,7 +832,14 @@ void SVirtualFlowView::ResetViewState()
 	RealizedItemMap.Reset();
 	FlattenedModel = FVirtualFlowDisplayModel();
 	LayoutCache = FVirtualFlowLayoutCache();
+
+	// A full reset can occur while the view holds focus and is still waiting for data
+	const bool bPreserveViewFocusForward = InteractionState.bPendingViewFocusForward;
+	const EFocusCause PreservedViewFocusCause = InteractionState.PendingViewFocusCause;
 	InteractionState = FVirtualFlowInteractionState();
+	InteractionState.bPendingViewFocusForward = bPreserveViewFocusForward;
+	InteractionState.PendingViewFocusCause = PreservedViewFocusCause;
+
 	ScrollController = FVirtualFlowScrollController();
 	ItemDataCache.Reset();
 	Realization = FRealizationState();
@@ -920,6 +926,7 @@ bool SVirtualFlowView::TryScrollItemIntoView(UObject* InItem, const EVirtualFlow
 
 	InteractionState.PendingAction.Type = FDeferredViewAction::EType::ScrollIntoView;
 	InteractionState.PendingAction.TargetItem = DisplayedItem;
+	InteractionState.PendingAction.FocusAttempts = 0; // Fresh action, fresh focus budget
 
 	float ScrollOffset = ComputeTargetScrollOffsetForItem(*SnapshotIndex, Destination);
 
@@ -975,6 +982,38 @@ bool SVirtualFlowView::TryFocusItem(UObject* InItem, const EVirtualFlowScrollDes
 	RequestRefresh(ERefreshStage::RefreshVisible);
 	UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] Deferred FocusItem action queued for [%s]"),
 		__FUNCTION__, *GetNameSafe(InItem));
+	return true;
+}
+
+bool SVirtualFlowView::TryFocusSection(UObject* SectionHeader, const EVirtualFlowScrollDestination Destination)
+{
+	if (!IsValid(SectionHeader))
+	{
+		return false;
+	}
+	
+	if (!TryScrollItemIntoView(SectionHeader, Destination))
+	{
+		UE_LOG(LogVirtualFlowInput, Warning, TEXT("[%hs] TryScrollItemIntoView failed for section [%s]"),
+			__FUNCTION__, *GetNameSafe(SectionHeader));
+		return false;
+	}
+
+	// Focus the header when its entry can take focus, otherwise the first focusable item in the section.
+	UObject* FocusTarget = ResolveSectionFocusTarget(SectionHeader);
+	if (IsValid(FocusTarget))
+	{
+		InteractionState.PendingAction.Type = FDeferredViewAction::EType::FocusItem;
+		InteractionState.PendingAction.TargetItem = FocusTarget;
+		RequestRefresh(ERefreshStage::RefreshVisible);
+		UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] Deferred FocusItem queued for [%s] (section [%s])"),
+			__FUNCTION__, *GetNameSafe(FocusTarget), *GetNameSafe(SectionHeader));
+	}
+	else
+	{
+		UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] Section [%s] has no focusable content, completing as scroll-only"),
+			__FUNCTION__, *GetNameSafe(SectionHeader));
+	}
 	return true;
 }
 
@@ -1300,10 +1339,15 @@ void SVirtualFlowView::Tick(const FGeometry& AllottedGeometry, const double InCu
 	// Phase 5: Sync realized widgets to viewport
 	RefreshRealizationIfNeeded();
 
-	// Phase 6: Resolve deferred scroll/focus requests
+	// Phase 6: Hand view-level focus to an entry once one can be resolved.
+	// Runs before ResolveDeferredActions so a forward that converts into a
+	// deferred FocusItem action can resolve on this same tick.
+	ForwardPendingViewFocus();
+
+	// Phase 7: Resolve deferred scroll/focus requests
 	const bool bDidDeferredWork = ResolveDeferredActions();
 
-	// Phase 7: Measure realized widgets and feed back
+	// Phase 8: Measure realized widgets and feed back
 	const bool bMeasurementsChanged = MeasureAndFeedBack();
 
 	// Preview entries that use a measured size may need to be measured again
@@ -1321,20 +1365,22 @@ void SVirtualFlowView::Tick(const FGeometry& AllottedGeometry, const double InCu
 	}
 #endif
 
-	// Phase 8: Restore focus after expansion (runs after realization so the widget exists)
+	// Phase 9: Restore focus after expansion (runs after realization so the widget exists)
 	const bool bFocusRestored = RestorePendingFocus();
 
-	// Phase 9: Scroll focused entry out of buffer zone (reactive -- fires on focus change)
+	// Phase 10: Scroll focused entry out of buffer zone (reactive -- fires on focus change)
 	const bool bBufferScrollApplied = ScrollFocusedEntryOutOfBufferZone();
 
-	// Phase 10: Synchronize chrome (scrollbar, minimap)
+	// Phase 11: Synchronize chrome (scrollbar, minimap)
 	SynchronizeChrome();
 
-	// Phase 11: Push viewport proximity values to realized entries
+	// Phase 12: Push viewport proximity values to realized entries
 	UpdateViewportProximity();
 
-	// Phase 12: Pin sticky headers to the viewport leading edge
+	// Phase 13: Pin sticky headers to the viewport leading edge
 	UpdateStickyHeaders();
+
+	// Phase 14: Track the active section and notify the owner on change
 	UpdateActiveSection();
 
 	// Request repaint if any phase did work
@@ -1793,6 +1839,18 @@ bool SVirtualFlowView::ResolveDeferredActions()
 			// lands. Only request RefreshVisible when realization is needed.
 			const bool bIsRealized = RealizedItemMap.Contains(
 				InteractionState.PendingAction.TargetItem);
+			
+			if (bIsRealized && ++InteractionState.PendingAction.FocusAttempts >= FDeferredViewAction::MaxFocusAttempts)
+			{
+				UE_LOG(LogVirtualFlowInput, Warning,
+					TEXT("[%hs] Giving up focus on [%s] after %d attempts; completing as scroll-only. ")
+					TEXT("Verify the entry widget exposes a focusable target (bIsFocusable, a focusable child, or GetVirtualFlowPreferredFocusTarget)."),
+					__FUNCTION__, *GetNameSafe(InteractionState.PendingAction.TargetItem.Get()),
+					InteractionState.PendingAction.FocusAttempts);
+				InteractionState.PendingAction.Reset();
+				return true;
+			}
+
 			UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] Focus attempt failed for [%s] (Realized=%d), requesting %s"),
 				__FUNCTION__, *GetNameSafe(InteractionState.PendingAction.TargetItem.Get()),
 				bIsRealized, bIsRealized ? TEXT("Repaint") : TEXT("RefreshVisible"));
@@ -2112,6 +2170,65 @@ bool SVirtualFlowView::RestorePendingFocus()
 	UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] Restoring focus to [%s] after expansion"),
 		__FUNCTION__, *GetNameSafe(Item));
 	return TryFocusRealizedItem(Item);
+}
+
+UObject* SVirtualFlowView::ResolveViewFocusPolicyTarget() const
+{
+	if (!OwnerWidget.IsValid())
+	{
+		return nullptr;
+	}
+
+	UObject* Target = nullptr;
+	if (OwnerWidget->GetViewFocusPolicy() == EVirtualFlowViewFocusPolicy::RestoreLastFocused)
+	{
+		Target = OwnerWidget->GetLastFocusedItem().Get();
+	}
+	if (!IsValid(Target))
+	{
+		Target = OwnerWidget->GetFirstFocusableItem();
+	}
+	return Target;
+}
+
+void SVirtualFlowView::ForwardPendingViewFocus()
+{
+	if (!InteractionState.bPendingViewFocusForward || !OwnerWidget.IsValid())
+	{
+		return;
+	}
+	
+	if (!HasUserFocus(GetOwnerSlateUserIndex()))
+	{
+		UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] View no longer holds focus, disarming forward"), __FUNCTION__);
+		InteractionState.bPendingViewFocusForward = false;
+		return;
+	}
+
+	UObject* TargetItem = ResolveViewFocusPolicyTarget();
+	if (!IsValid(TargetItem))
+	{
+		return;
+	}
+	
+	TSharedPtr<SWidget> SlateTarget = FindFocusableSlateWidgetForItem(TargetItem);
+	if (SlateTarget.IsValid() && SlateTarget->SupportsKeyboardFocus())
+	{
+		UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] Forwarding view focus to realized item [%s]"),
+			__FUNCTION__, *GetNameSafe(TargetItem));
+		InteractionState.bPendingViewFocusForward = false;
+		OwnerWidget->NotifyItemFocusChanged(TargetItem, OwnerWidget->GetFirstWidgetForItem(TargetItem));
+		OwnerWidget->ApplySelectOnFocus(TargetItem);
+		FSlateApplication::Get().SetKeyboardFocus(SlateTarget, InteractionState.PendingViewFocusCause);
+		return;
+	}
+	
+	if (TryFocusItem(TargetItem, EVirtualFlowScrollDestination::Nearest))
+	{
+		UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] Forwarding view focus to unrealized item [%s] via deferred action"),
+			__FUNCTION__, *GetNameSafe(TargetItem));
+		InteractionState.bPendingViewFocusForward = false;
+	}
 }
 
 // ===========================================================================
@@ -2547,6 +2664,17 @@ void SVirtualFlowView::FinalizeLayoutBuild(FLayoutRebuildContext& Context)
 	}
 
 	++Realization.LayoutGeneration;
+
+	// Cache whether any placed item is explicitly tagged as a section header.
+	bLayoutHasExplicitSectionHeaders = false;
+	for (const FVirtualFlowPlacedItem& Placed : LayoutCache.CurrentLayout.Items)
+	{
+		if (Placed.Layout.bIsSectionHeader)
+		{
+			bLayoutHasExplicitSectionHeaders = true;
+			break;
+		}
+	}
 
 	// Sync minimap if layout changed structurally
 	if (Minimap.IsValid())
@@ -3890,7 +4018,7 @@ TSharedPtr<SWidget> SVirtualFlowView::FindFocusableSlateWidgetForItem(UObject* I
 		if (UWidget* FocusTarget = OwnerWidget->GetPreferredFocusTargetForEntryWidget(EntryWidget))
 		{
 			TSharedPtr<SWidget> SlateTarget = FocusTarget->GetCachedWidget();
-			if (SlateTarget.IsValid())
+			if (SlateTarget.IsValid() && SlateTarget->SupportsKeyboardFocus())
 			{
 				return SlateTarget;
 			}
@@ -4248,36 +4376,48 @@ FReply SVirtualFlowView::OnFocusReceived(const FGeometry& MyGeometry, const FFoc
 		return FReply::Unhandled();
 	}
 
-	// Determine target item based on policy
-	UObject* TargetItem = nullptr;
-
-	switch (Policy) {
-	case EVirtualFlowViewFocusPolicy::FocusFirstItem:
-		TargetItem = OwnerWidget->GetFirstFocusableItem();
-		break;
-	case EVirtualFlowViewFocusPolicy::RestoreLastFocused:
-		TargetItem = OwnerWidget->GetLastFocusedItem().Get();
-		break;
-	case EVirtualFlowViewFocusPolicy::None:
-		break;
-	}
-
-	if (!IsValid(TargetItem))
+	// Receiving focus on the frame of construction happens before the first
+	// Tick has built anything.
+	if (IsRefreshPending(ERefreshStage::RebuildData))
 	{
-		return FReply::Unhandled();
+		RebuildFlattenedModel();
+		ClearRefreshStage(ERefreshStage::RebuildData);
 	}
 
-	UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] View received focus (Cause=%d, Policy=%d), redirecting to item [%s]"),
+	UObject* TargetItem = ResolveViewFocusPolicyTarget();
+
+	UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] View received focus (Cause=%d, Policy=%d), target item [%s]"),
 		__FUNCTION__, static_cast<int32>(InFocusEvent.GetCause()), static_cast<int32>(Policy), *GetNameSafe(TargetItem));
 
-	// If the target is already realized, focus it directly.
-	// Otherwise, scroll it into view and defer the focus.
-	if (!TryFocusRealizedItem(TargetItem))
+	if (IsValid(TargetItem))
 	{
-		TryFocusItem(TargetItem, EVirtualFlowScrollDestination::Nearest);
+		TSharedPtr<SWidget> SlateTarget = FindFocusableSlateWidgetForItem(TargetItem);
+		if (SlateTarget.IsValid() && SlateTarget->SupportsKeyboardFocus())
+		{
+			OwnerWidget->NotifyItemFocusChanged(TargetItem, OwnerWidget->GetFirstWidgetForItem(TargetItem));
+			OwnerWidget->ApplySelectOnFocus(TargetItem);
+			return FReply::Handled().SetUserFocus(SlateTarget.ToSharedRef(), InFocusEvent.GetCause());
+		}
+
+		// Target known but not realized: scroll it into view and let the
+		// deferred FocusItem action land focus once the widget exists.
+		if (TryFocusItem(TargetItem, EVirtualFlowScrollDestination::Nearest))
+		{
+			return FReply::Handled();
+		}
 	}
 
+	// No entry target could be resolved
+	InteractionState.bPendingViewFocusForward = true;
+	InteractionState.PendingViewFocusCause = InFocusEvent.GetCause();
 	return FReply::Handled();
+}
+
+void SVirtualFlowView::OnFocusLost(const FFocusEvent& InFocusEvent)
+{
+	// If focus leaves the view while a forward is armed, the request is stale.
+	InteractionState.bPendingViewFocusForward = false;
+	SCompoundWidget::OnFocusLost(InFocusEvent);
 }
 
 FReply SVirtualFlowView::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
@@ -4735,6 +4875,142 @@ float SVirtualFlowView::ComputeContainingSnapOffset(const int32 TargetSnapshotIn
 	return -1.0f;
 }
 
+bool SVirtualFlowView::IsSectionHeaderIndex(const int32 SnapshotIndex) const
+{
+	const FVirtualFlowLayoutSnapshot& Layout = LayoutCache.CurrentLayout;
+	if (!Layout.Items.IsValidIndex(SnapshotIndex))
+	{
+		return false;
+	}
+	const FVirtualFlowPlacedItem& Placed = Layout.Items[SnapshotIndex];
+
+	// Explicit tags are authoritative when any exist in the current layout.
+	if (bLayoutHasExplicitSectionHeaders)
+	{
+		return Placed.Layout.bIsSectionHeader;
+	}
+
+	return Placed.Depth == 0 && (Placed.ColumnStart == 0 || Placed.Layout.bFullRow);
+}
+
+UObject* SVirtualFlowView::FindContainingSectionHeader(UObject* InItem) const
+{
+	const FVirtualFlowLayoutSnapshot& Layout = LayoutCache.CurrentLayout;
+	if (!IsValid(InItem) || Layout.IndicesByTop.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	// Resolve nested items to the displayed item that owns their placement.
+	UObject* DisplayedItem = NavigationPolicy.ResolveOwningDisplayedItem(InItem);
+	if (!IsValid(DisplayedItem))
+	{
+		return nullptr;
+	}
+
+	// For hierarchical data (section items own their children), the containing
+	// section is the displayed item's root ancestor.
+	{
+		UObject* RootAncestor = DisplayedItem;
+		TSet<UObject*> Visited;
+		while (const TWeakObjectPtr<UObject>* ParentPtr = FlattenedModel.ParentMap.Find(RootAncestor))
+		{
+			UObject* Parent = ParentPtr->Get();
+			if (!IsValid(Parent) || Visited.Contains(Parent))
+			{
+				break;
+			}
+			Visited.Add(Parent);
+			RootAncestor = Parent;
+		}
+		if (RootAncestor != DisplayedItem)
+		{
+			return RootAncestor;
+		}
+	}
+
+	// DisplayedItem is a root item. If it is itself a section header we're
+	// done; otherwise binary-search IndicesByTop for the last entry at or
+	// before the item's main-axis position and walk backward to the nearest
+	// preceding header. Mirrors ComputeContainingSnapOffset, but resolves the
+	// header item rather than a snap-aligned scroll offset.
+	const int32* SnapshotIndex = Layout.ItemToPlacedIndex.Find(DisplayedItem);
+	if (!SnapshotIndex)
+	{
+		return nullptr;
+	}
+
+	if (IsSectionHeaderIndex(*SnapshotIndex))
+	{
+		return DisplayedItem;
+	}
+
+	const float TargetY = Layout.Items[*SnapshotIndex].Y;
+	int32 Low = 0;
+	int32 High = Layout.IndicesByTop.Num() - 1;
+	int32 InsertionPoint = 0;
+
+	while (Low <= High)
+	{
+		const int32 Mid = Low + (High - Low) / 2;
+		if (Layout.Items[Layout.IndicesByTop[Mid]].Y <= TargetY)
+		{
+			InsertionPoint = Mid;
+			Low = Mid + 1;
+		}
+		else
+		{
+			High = Mid - 1;
+		}
+	}
+
+	for (int32 Idx = InsertionPoint; Idx >= 0; --Idx)
+	{
+		const int32 CandidateIdx = Layout.IndicesByTop[Idx];
+		if (IsSectionHeaderIndex(CandidateIdx) && Layout.Items[CandidateIdx].Y <= TargetY)
+		{
+			return Layout.Items[CandidateIdx].Item.Get();
+		}
+	}
+
+	return nullptr;
+}
+
+UObject* SVirtualFlowView::ResolveSectionFocusTarget(UObject* SectionHeader) const
+{
+	if (!IsValid(SectionHeader))
+	{
+		return nullptr;
+	}
+
+	// Prefer the header itself when its realized entry exposes a focusable widget.
+	if (RealizedItemMap.Contains(SectionHeader))
+	{
+		TSharedPtr<SWidget> HeaderTarget = FindFocusableSlateWidgetForItem(SectionHeader);
+		if (HeaderTarget.IsValid() && HeaderTarget->SupportsKeyboardFocus())
+		{
+			return SectionHeader;
+		}
+		// Realized but nothing focusable inside, fall through to members.
+	}
+
+	// First focusable item (display order) whose containing section is this header.
+	for (const TWeakObjectPtr<UObject>& ItemPtr : FlattenedModel.FocusableItemsInDisplayOrder)
+	{
+		UObject* Item = ItemPtr.Get();
+		if (!IsValid(Item) || Item == SectionHeader)
+		{
+			continue;
+		}
+		if (FindContainingSectionHeader(Item) == SectionHeader)
+		{
+			return Item;
+		}
+	}
+
+	return nullptr;
+}
+
 void SVirtualFlowView::UpdateActiveSection()
 {
 	const FVirtualFlowLayoutSnapshot& Layout = LayoutCache.CurrentLayout;
@@ -4743,27 +5019,34 @@ void SVirtualFlowView::UpdateActiveSection()
 		return;
 	}
 
-	const float MaxOffset = GetMaxScrollOffset();
-	const float VisualOffset = GetVisualScrollOffset();
-	const float Progress = (MaxOffset > KINDA_SMALL_NUMBER)
-		? FMath::Clamp(VisualOffset / MaxOffset, 0.0f, 1.0f)
-		: 0.0f;
-	const float RefLine = Progress + GetViewportMainExtent();
-
+	// While a realized entry holds focus, its containing section is the active one regardless of where the viewport sits.
 	UObject* ActiveSection = nullptr;
-	for (const int32 SnapshotIndex : Layout.IndicesByTop)
+	if (UObject* FocusedItem = InteractionState.LastTickFocusedItem.Get())
 	{
-		const FVirtualFlowPlacedItem& Placed = Layout.Items[SnapshotIndex];
-		const bool bIsHeader = Placed.Depth == 0 && (Placed.ColumnStart == 0 || Placed.Layout.bFullRow);
-		if (!bIsHeader)
+		ActiveSection = FindContainingSectionHeader(FocusedItem);
+	}
+
+	if (!IsValid(ActiveSection))
+	{
+		const float MaxOffset = GetMaxScrollOffset();
+		const float VisualOffset = GetVisualScrollOffset();
+		const float Progress = (MaxOffset > KINDA_SMALL_NUMBER)
+			? FMath::Clamp(VisualOffset / MaxOffset, 0.0f, 1.0f)
+			: 0.0f;
+		const float RefLine = VisualOffset + Progress * GetViewportMainExtent();
+
+		for (const int32 SnapshotIndex : Layout.IndicesByTop)
 		{
-			continue;
+			if (!IsSectionHeaderIndex(SnapshotIndex))
+			{
+				continue;
+			}
+			if (GetItemMainStart(SnapshotIndex) > RefLine)
+			{
+				break;
+			}
+			ActiveSection = Layout.Items[SnapshotIndex].Item.Get();
 		}
-		if (GetItemMainStart(SnapshotIndex) > RefLine)
-		{
-			break;
-		}
-		ActiveSection = Placed.Item.Get();
 	}
 
 	if (ActiveSection != InteractionState.LastActiveSection.Get())
