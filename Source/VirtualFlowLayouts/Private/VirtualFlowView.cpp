@@ -654,7 +654,12 @@ void UVirtualFlowView::SetSelectedItems(const TArray<UObject*>& InItems, EVirtua
 	{
 		if (UObject* FirstSelected = GetFirstSelectedItem())
 		{
-			FocusItem(FirstSelected, EVirtualFlowScrollDestination::Nearest);
+			const bool bAlreadyFocusedOrPending = MyFlowView.IsValid() && MyFlowView->IsItemFocusedOrPendingFocus(FirstSelected);
+
+			if (!bAlreadyFocusedOrPending)
+			{
+				FocusItem(FirstSelected, EVirtualFlowScrollDestination::Nearest);
+			}
 		}
 	}
 }

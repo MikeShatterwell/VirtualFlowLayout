@@ -130,7 +130,26 @@ struct FDeferredViewAction
 	};
 
 	EType Type = EType::None;
-	TWeakObjectPtr<UObject> TargetItem;
+
+	/** The item that receives focus (FocusItem actions) and whose visibility
+	 *  gates the focus attempt.
+	 */
+	TWeakObjectPtr<UObject> FocusTargetItem;
+
+	/**
+	 * Item whose placed entry is aligned to Destination by the scroll.
+	 */
+	TWeakObjectPtr<UObject> ScrollTargetItem;
+
+	/**
+	 * Destination rule captured at request time.
+	 */
+	EVirtualFlowScrollDestination Destination = EVirtualFlowScrollDestination::Nearest;
+
+	/**
+	 * True once focus has been applied for a FocusItem action
+	 */
+	bool bFocusApplied = false;
 
 	/** Failed focus attempts on a realized, visible target. FocusItem actions
 	 *  degrade to scroll-only completion once MaxFocusAttempts is reached, so a
@@ -142,12 +161,15 @@ struct FDeferredViewAction
 
 	bool IsValid() const
 	{
-		return Type != EType::None && TargetItem.IsValid();
+		return Type != EType::None && FocusTargetItem.IsValid();
 	}
 	void Reset()
 	{
 		Type = EType::None;
-		TargetItem.Reset();
+		FocusTargetItem.Reset();
+		ScrollTargetItem.Reset();
+		Destination = EVirtualFlowScrollDestination::Nearest;
+		bFocusApplied = false;
 		FocusAttempts = 0;
 	}
 };
@@ -180,6 +202,19 @@ struct FVirtualFlowInteractionState
 	// --- Focus-driven scroll buffer ---
 	/** The item whose entry widget held keyboard focus last tick. Used to detect focus transitions. */
 	TWeakObjectPtr<UObject> LastTickFocusedItem;
+
+	/**
+	 * Item deliberately positioned by a programmatic FocusItem / FocusSection
+	 * request. While keyboard focus remains on this item, buffer-zone eviction
+	 * (ScrollFocusedEntryOutOfBufferZone) is suppressed entirely.
+	 */
+	TWeakObjectPtr<UObject> BufferScrollExemptItem;
+
+	/**
+	 * Armed on every focus transition to a valid realized entry; cleared only
+	 * once the buffer-zone evaluation actually RUNS for the currently focused item
+	 */
+	bool bPendingBufferCheck = false;
 
 	// --- Navigation rate limiting ---
 	/** Timestamp of the last navigation action that initiated a scroll or focus command. */
@@ -554,6 +589,13 @@ public:
 	 */
 	bool TryFocusSection(UObject* SectionHeader, EVirtualFlowScrollDestination Destination);
 
+	/**
+	 * Returns true when the item's realized entry already holds keyboard focus
+	 * (directly or via a focused descendant), or when an in-flight deferred
+	 * action is already targeting the item.
+	 */
+	bool IsItemFocusedOrPendingFocus(UObject* InItem) const;
+
 	/** Sets the scroll offset of the view in pixels, clamping to legal bounds and applying overscroll as needed. */
 	void SetScrollOffset(float InScrollOffsetPx);
 	float GetScrollOffset() const { return ScrollController.GetOffset(); }
@@ -794,6 +836,13 @@ private:
 	// --- Scroll / focus resolution ---
 
 	float ComputeTargetScrollOffsetForItem(int32 SnapshotIndex, EVirtualFlowScrollDestination Destination) const;
+
+	/**
+	 * Computes the fully-resolved scroll offset for a deferred action's target
+	 * taking into account scroll snapping, destination, etc. 
+	 */
+	float ComputeAimedScrollOffset(int32 SnapshotIndex, EVirtualFlowScrollDestination Destination) const;
+
 	bool TryFocusRealizedItem(UObject* InItem) const;
 
 	/**
@@ -922,6 +971,12 @@ private:
 	 *  At runtime, repaints are driven by targeted Invalidate(Paint) calls
 	 *  to avoid making the entire subtree indirectly volatile. */
 	mutable bool bNeedsRepaint = true;
+
+	/**
+	 * True while this view is programmatically moving keyboard focus to an
+	 * entry (TryFocusRealizedItem / ForwardPendingViewFocus).
+	 */
+	mutable bool bSettingFocusProgrammatically = false;
 
 	/** Ticks remaining before a forced full re-measurement.
 	 *  Entry widgets created during the first few ticks after construction may not

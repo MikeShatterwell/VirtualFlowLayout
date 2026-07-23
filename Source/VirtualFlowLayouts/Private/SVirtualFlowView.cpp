@@ -925,39 +925,14 @@ bool SVirtualFlowView::TryScrollItemIntoView(UObject* InItem, const EVirtualFlow
 	}
 
 	InteractionState.PendingAction.Type = FDeferredViewAction::EType::ScrollIntoView;
-	InteractionState.PendingAction.TargetItem = DisplayedItem;
+	InteractionState.PendingAction.FocusTargetItem = DisplayedItem;
+	InteractionState.PendingAction.ScrollTargetItem = DisplayedItem; // The item the scroll aligns to Destination
+	InteractionState.PendingAction.Destination = Destination; // Stored so ResolveDeferredActions can re-aim every tick
+	InteractionState.PendingAction.bFocusApplied = false;
 	InteractionState.PendingAction.FocusAttempts = 0; // Fresh action, fresh focus budget
 
-	float ScrollOffset = ComputeTargetScrollOffsetForItem(*SnapshotIndex, Destination);
-
-	// When scroll snapping is enabled, align the offset to the snap candidate (section
-	// header) that contains this item. Without this, the scroll lands at the item's raw
-	// main-axis position -- which is typically NOT a snap point. Once the deferred action
-	// completes and PendingAction is cleared, idle snap corrects to the nearest snap
-	// candidate. If the item is near the far end of its section, the nearest snap
-	// candidate may be the NEXT section -- pulling the viewport away from the target and
-	// causing oscillation with ScrollFocusedEntryOutOfBufferZone.
-	//
-	// By snapping to the containing section up front, the scroll target IS the snap point,
-	// so idle snap has nothing to correct and the viewport stabilises immediately.
-	if (OwnerWidget.IsValid() && OwnerWidget->GetEnableScrollSnapping() && !LayoutCache.CurrentLayout.Items.IsEmpty())
-	{
-		const float SnapAligned = ComputeContainingSnapOffset(*SnapshotIndex, OwnerWidget->GetScrollSnapDestination());
-		if (SnapAligned >= 0.0f)
-		{
-			// Verify the target item would still be visible at the snap-aligned offset.
-			// For sections taller than the viewport this check fails, and we fall back
-			// to the raw item offset so the deferred action can converge.
-			const float ItemStartLocal = GetItemMainStart(*SnapshotIndex) - SnapAligned;
-			const float ItemEndLocal   = GetItemMainEnd(*SnapshotIndex) - SnapAligned;
-			const float MainExtent     = GetViewportMainExtent();
-
-			if (ItemEndLocal > 0.0f && ItemStartLocal < MainExtent)
-			{
-				ScrollOffset = SnapAligned;
-			}
-		}
-	}
+	// Destination + snap alignment + clamping
+	const float ScrollOffset = ComputeAimedScrollOffset(*SnapshotIndex, Destination);
 
 	SetScrollOffset(ScrollOffset);
 	RequestRefresh(ERefreshStage::RefreshVisible);
@@ -978,7 +953,20 @@ bool SVirtualFlowView::TryFocusItem(UObject* InItem, const EVirtualFlowScrollDes
 	}
 
 	InteractionState.PendingAction.Type = FDeferredViewAction::EType::FocusItem;
-	InteractionState.PendingAction.TargetItem = InItem;
+	InteractionState.PendingAction.FocusTargetItem = InItem;
+
+	// Only explicit placements (Top/Center/Bottom) are exempt from buffer eviction
+	// Focus navigation uses Nearest which must respect the buffer rules, otherwise
+	// scrolling won't work.
+	if (Destination != EVirtualFlowScrollDestination::Nearest)
+	{
+		InteractionState.BufferScrollExemptItem = InItem;
+	}
+	else
+	{
+		InteractionState.BufferScrollExemptItem.Reset();
+	}
+
 	RequestRefresh(ERefreshStage::RefreshVisible);
 	UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] Deferred FocusItem action queued for [%s]"),
 		__FUNCTION__, *GetNameSafe(InItem));
@@ -1004,7 +992,20 @@ bool SVirtualFlowView::TryFocusSection(UObject* SectionHeader, const EVirtualFlo
 	if (IsValid(FocusTarget))
 	{
 		InteractionState.PendingAction.Type = FDeferredViewAction::EType::FocusItem;
-		InteractionState.PendingAction.TargetItem = FocusTarget;
+		InteractionState.PendingAction.FocusTargetItem = FocusTarget;
+
+		// Only explicit placements (Top/Center/Bottom) are exempt from buffer eviction
+		// Focus navigation uses Nearest which must respect the buffer rules, otherwise
+		// scrolling won't work.
+		if (Destination != EVirtualFlowScrollDestination::Nearest)
+		{
+			InteractionState.BufferScrollExemptItem = FocusTarget;
+		}
+		else
+		{
+			InteractionState.BufferScrollExemptItem.Reset();
+		}
+
 		RequestRefresh(ERefreshStage::RefreshVisible);
 		UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] Deferred FocusItem queued for [%s] (section [%s])"),
 			__FUNCTION__, *GetNameSafe(FocusTarget), *GetNameSafe(SectionHeader));
@@ -1497,6 +1498,9 @@ void SVirtualFlowView::AdvanceScrollState(const FGeometry& AllottedGeometry, con
 		UE_LOG(LogVirtualFlowScroll, VeryVerbose, TEXT("[%hs] RightStick scroll delta=%.2f (input=%.3f, speed=%.0f)"),
 			__FUNCTION__, ScrollDelta, InteractionState.RightStickScrollInput, OwnerWidget->GetRightStickScrollSpeed());
 
+		// User input takes over: cancel any in-flight deferred action
+		InteractionState.PendingAction.Reset();
+
 		ScrollController.ResetPhysics(true);
 		const float NewOffset = FMath::Clamp(
 			ScrollController.GetOffset() + ScrollDelta,
@@ -1724,144 +1728,172 @@ void SVirtualFlowView::RefreshRealizationIfNeeded()
 
 bool SVirtualFlowView::ResolveDeferredActions()
 {
-	bool bDidAnyWork = false;
+	FDeferredViewAction& Action = InteractionState.PendingAction;
 
-	if (InteractionState.PendingAction.Type == FDeferredViewAction::EType::ScrollIntoView
-		|| InteractionState.PendingAction.Type == FDeferredViewAction::EType::FocusItem)
+	if (Action.Type != FDeferredViewAction::EType::ScrollIntoView && Action.Type != FDeferredViewAction::EType::FocusItem)
 	{
-		if (!InteractionState.PendingAction.TargetItem.IsValid())
+		return false;
+	}
+
+	if (!Action.FocusTargetItem.IsValid())
+	{
+		UE_LOG(LogVirtualFlowScroll, Verbose, TEXT("[%hs] Pending action target became invalid, clearing"),
+			__FUNCTION__);
+		Action.Reset();
+		return false;
+	}
+
+	UE_LOG(LogVirtualFlowScroll, Verbose, TEXT("[%hs] Resolving deferred %s for [%s]"),
+		__FUNCTION__,
+		Action.Type == FDeferredViewAction::EType::FocusItem ? TEXT("FocusItem") : TEXT("ScrollIntoView"),
+		*GetNameSafe(Action.FocusTargetItem.Get()));
+	
+	// For section focus (TryFocusSection) the header is what gets aligned to Destination while FocusTargetItem is the
+	// focusable member.
+	UObject* ScrollTargetItem = Action.ScrollTargetItem.IsValid()
+		? Action.ScrollTargetItem.Get()
+		: Action.FocusTargetItem.Get();
+	UObject* ScrollDisplayedItem = NavigationPolicy.ResolveOwningDisplayedItem(ScrollTargetItem);
+	const int32* ScrollSnapshotIndex = IsValid(ScrollDisplayedItem)
+		? LayoutCache.CurrentLayout.ItemToPlacedIndex.Find(ScrollDisplayedItem)
+		: nullptr;
+
+	if (ScrollSnapshotIndex == nullptr)
+	{
+		UE_LOG(LogVirtualFlowScroll, Warning, TEXT("[%hs] Scroll target [%s] no longer placed in layout, abandoning action"),
+			__FUNCTION__, *GetNameSafe(ScrollTargetItem));
+		Action.Reset();
+		return false;
+	}
+
+	// --- Resolve the focus target (FocusItem actions) ---
+	UObject* FocusDisplayedItem = NavigationPolicy.ResolveOwningDisplayedItem(Action.FocusTargetItem.Get());
+	const int32* FocusSnapshotIndex = IsValid(FocusDisplayedItem)
+		? LayoutCache.CurrentLayout.ItemToPlacedIndex.Find(FocusDisplayedItem)
+		: nullptr;
+
+	// Re-aim the scroll target every tick since measuring and layout can change the target's position in the viewport.
+	const float AimedOffset = ComputeAimedScrollOffset(*ScrollSnapshotIndex, Action.Destination);
+	if (!FMath::IsNearlyEqual(AimedOffset, ScrollController.GetTargetOffset(), 0.5f))
+	{
+		UE_LOG(LogVirtualFlowScroll, Verbose, TEXT("[%hs] Re-aiming target for [%s]: %.1f -> %.1f"),
+			__FUNCTION__, *GetNameSafe(ScrollTargetItem),
+			ScrollController.GetTargetOffset(), AimedOffset);
+
+		ScrollController.SetTargetOffset(AimedOffset);
+		if (!OwnerWidget.IsValid() || !OwnerWidget->GetSmoothScrollEnabled())
 		{
-			UE_LOG(LogVirtualFlowScroll, Verbose, TEXT("[%hs] Pending action target became invalid, clearing"),
-				__FUNCTION__);
-			InteractionState.PendingAction.Reset();
-			return false;
+			ScrollController.SetOffset(AimedOffset);
 		}
+		ClampScrollOffset();
+		RequestRefresh(ERefreshStage::RefreshVisible | ERefreshStage::Repaint);
+	}
 
-		UE_LOG(LogVirtualFlowScroll, Verbose, TEXT("[%hs] Resolving deferred %s for [%s]"),
-			__FUNCTION__,
-			InteractionState.PendingAction.Type == FDeferredViewAction::EType::FocusItem ? TEXT("FocusItem") : TEXT("ScrollIntoView"),
-			*GetNameSafe(InteractionState.PendingAction.TargetItem.Get()));
+	// Arrival state, shared by the focus step (degrade decisions) and completion.
+	const bool bArrived = FMath::IsNearlyEqual(ScrollController.GetOffset(), ScrollController.GetTargetOffset(), 0.5f);
 
-		// ---------------------------------------------------------------
-		// Layout-based visibility check.
-		//
-		// Uses layout-space coordinates (always current within the tick)
-		// instead of stale CachedGeometry from the previous paint pass.
-		// Complete the action as soon as the item is visible. The smooth
-		// scroll animation continues independently in the background;
-		// ScrollFocusedEntryOutOfBufferZone handles residual adjustments
-		// once widget geometry has settled after the next paint pass.
-		// ---------------------------------------------------------------
-
-		UObject* DisplayedItem = NavigationPolicy.ResolveOwningDisplayedItem(
-			InteractionState.PendingAction.TargetItem.Get());
-		const int32* SnapshotIndex = IsValid(DisplayedItem)
-			? LayoutCache.CurrentLayout.ItemToPlacedIndex.Find(DisplayedItem)
-			: nullptr;
-
-		const bool bItemVisible = SnapshotIndex && IsItemVisibleInViewport(*SnapshotIndex);
-
-		if (!bItemVisible)
+	// Focus sub-step 
+	bool bFocusAppliedThisTick = false;
+	if (Action.Type == FDeferredViewAction::EType::FocusItem && !Action.bFocusApplied && (!FocusSnapshotIndex || !IsItemVisibleInViewport(*FocusSnapshotIndex)))
+	{
+		if (bArrived)
 		{
-			// Not visible yet -- keep the action alive so the scroll continues
-			// and realization keeps running for the target region.
-			UE_LOG(LogVirtualFlowScroll, Verbose, TEXT("[%hs] Target [%s] not yet visible, keeping action alive"),
-				__FUNCTION__, *GetNameSafe(InteractionState.PendingAction.TargetItem.Get()));
-			RequestRefresh(ERefreshStage::RefreshVisible);
-			return true;
+			Action.bFocusApplied = true;
 		}
-
-		// Item is visible in the viewport.
-		if (InteractionState.PendingAction.Type == FDeferredViewAction::EType::ScrollIntoView)
+	}
+	else if (Action.Type == FDeferredViewAction::EType::FocusItem
+		&& !Action.bFocusApplied
+		&& IsItemVisibleInViewport(*FocusSnapshotIndex))
+	{
+		// Verify the widget's painted geometry actually overlaps the viewport before calling SetUserFocus.
+		bool bGeometrySettled = true;
+		UObject* FocusGeometryItem = IsValid(FocusDisplayedItem) ? FocusDisplayedItem : Action.FocusTargetItem.Get();
+		const FRealizedPlacedItem* FocusRealized = RealizedItemMap.Find(FocusGeometryItem);
+		if ((FocusRealized != nullptr) && FocusRealized->SlotBox.IsValid() && ViewportBorder.IsValid())
 		{
-			UE_LOG(LogVirtualFlowScroll, Log, TEXT("[%hs] ScrollIntoView completed for [%s]"),
-				__FUNCTION__, *GetNameSafe(InteractionState.PendingAction.TargetItem.Get()));
-			InteractionState.PendingAction.Reset();
-			return true;
-		}
-
-		// FocusItem: the item is visible in layout-space, attempt to focus.
-		//
-		// Guard: verify the widget's painted geometry actually overlaps the
-		// viewport before calling SetKeyboardFocus. IsItemVisibleInViewport
-		// uses layout-space coordinates (always current within the tick),
-		// but the widget's Slate CachedGeometry reflects the PREVIOUS paint
-		// pass. When an entry was just scrolled into view (e.g. from the
-		// overscan zone), the render transform change hasn't been processed
-		// by paint yet -- CachedGeometry still shows the old off-screen
-		// position. Calling SetKeyboardFocus with stale geometry has been
-		// observed to produce unreliable focus results (the call may succeed
-		// but focus lands on an unexpected widget or is immediately lost).
-		// Deferring the focus attempt until paint has settled avoids this.
-		{
-			UObject* FocusDisplayedItem = IsValid(DisplayedItem) ? DisplayedItem : InteractionState.PendingAction.TargetItem.Get();
-			const FRealizedPlacedItem* FocusRealized = RealizedItemMap.Find(FocusDisplayedItem);
-			if (FocusRealized && FocusRealized->SlotBox.IsValid() && ViewportBorder.IsValid())
+			const FSlateRect SlotRect = SVirtualFlowViewHelpers::ToAbsoluteRect(FocusRealized->SlotBox->GetCachedGeometry());
+			const FSlateRect ViewRect = SVirtualFlowViewHelpers::ToAbsoluteRect(ViewportBorder->GetCachedGeometry());
+			const bool bGeometryOverlaps = SlotRect.GetSize().GetMax() > 0.0f && FSlateRect::DoRectanglesIntersect(SlotRect, ViewRect);
+			if (!bGeometryOverlaps)
 			{
-				const FSlateRect SlotRect = SVirtualFlowViewHelpers::ToAbsoluteRect(FocusRealized->SlotBox->GetCachedGeometry());
-				const FSlateRect ViewRect = SVirtualFlowViewHelpers::ToAbsoluteRect(ViewportBorder->GetCachedGeometry());
-				const bool bGeometryOverlaps = SlotRect.GetSize().GetMax() > 0.0f
-					&& FSlateRect::DoRectanglesIntersect(SlotRect, ViewRect);
-				if (!bGeometryOverlaps)
+				// Painted geometry is stale (still at overscan position).
+				// Wait for a paint pass to update CachedGeometry.
+				bGeometrySettled = false;
+				RequestRefresh(ERefreshStage::Repaint);
+			}
+			
+		}
+
+		if (bGeometrySettled)
+		{
+
+			TWeakObjectPtr<UObject> TargetBeforeFocus = Action.FocusTargetItem;
+			if (TryFocusRealizedItem(Action.FocusTargetItem.Get()))
+			{
+				if (Action.FocusTargetItem != TargetBeforeFocus)
 				{
-					// Painted geometry is stale (still at overscan position).
-					// Wait for a paint pass to update CachedGeometry.
-					RequestRefresh(ERefreshStage::Repaint);
+					UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] Re-entrant request replaced the action during focus, deferring to it"),
+						__FUNCTION__);
 					return true;
+				}
+
+				UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] Focus applied for [%s], travel continues to destination"),
+					__FUNCTION__, *GetNameSafe(Action.FocusTargetItem.Get()));
+				Action.bFocusApplied = true;
+				bFocusAppliedThisTick = true;
+			}
+			else
+			{
+				if (Action.FocusTargetItem != TargetBeforeFocus)
+				{
+					return true;
+				}
+				const bool bIsRealized = RealizedItemMap.Contains(Action.FocusTargetItem) || (IsValid(FocusDisplayedItem) && RealizedItemMap.Contains(FocusDisplayedItem));
+				
+				UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] Focus attempt failed for [%s] (Realized=%d), requesting %s"),
+					__FUNCTION__, *GetNameSafe(Action.FocusTargetItem.Get()),
+					bIsRealized, bIsRealized ? TEXT("Repaint") : TEXT("RefreshVisible"));
+				
+				if (bIsRealized)
+				{
+					Action.FocusAttempts++;
+					if (Action.FocusAttempts >= FDeferredViewAction::MaxFocusAttempts)
+					{
+						UE_LOG(LogVirtualFlowInput, Warning,
+							TEXT("[%hs] Giving up focus on [%s] after %d attempts; degrading to scroll-only travel. ")
+							TEXT("Verify the entry widget exposes a focusable target (bIsFocusable, a focusable child, or GetVirtualFlowPreferredFocusTarget)."),
+							__FUNCTION__, *GetNameSafe(Action.FocusTargetItem.Get()),
+							Action.FocusAttempts);
+						Action.bFocusApplied = true;
+					}
+					// Realized but focus didn't land, could be stale painted geometry.
+					RequestRefresh(ERefreshStage::Repaint);
+				}
+				else
+				{
+					RequestRefresh(ERefreshStage::RefreshVisible);
 				}
 			}
 		}
-
-		if (TryFocusRealizedItem(InteractionState.PendingAction.TargetItem.Get()))
-		{
-			UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] FocusItem completed for [%s]"),
-				__FUNCTION__, *GetNameSafe(InteractionState.PendingAction.TargetItem.Get()));
-			InteractionState.PendingAction.Reset();
-			bDidAnyWork = true;
-		}
-		else
-		{
-			// Focus attempt failed. Two possible reasons:
-			//
-			//   A. The widget isn't realized yet (e.g. still being created this
-			//      frame). Needs RefreshVisible to realize it.
-			//
-			//   B. The widget IS realized but SetKeyboardFocus didn't land
-			//      (the focus verification check failed). This can happen when
-			//      the widget's Slate tree isn't fully arranged yet -- e.g. the
-			//      geometry overlap guard above deferred, or the UMG widget
-			//      tree hasn't finished construction. A Repaint pass is enough
-			//      to settle geometry and let the next attempt succeed.
-			//
-			// Using RefreshVisible in case B triggers ClearChildren + re-add,
-			// which invalidates CachedGeometry, causing the geometry guard to
-			// defer again -- creating an infinite retry loop where focus never
-			// lands. Only request RefreshVisible when realization is needed.
-			const bool bIsRealized = RealizedItemMap.Contains(
-				InteractionState.PendingAction.TargetItem);
-			
-			if (bIsRealized && ++InteractionState.PendingAction.FocusAttempts >= FDeferredViewAction::MaxFocusAttempts)
-			{
-				UE_LOG(LogVirtualFlowInput, Warning,
-					TEXT("[%hs] Giving up focus on [%s] after %d attempts; completing as scroll-only. ")
-					TEXT("Verify the entry widget exposes a focusable target (bIsFocusable, a focusable child, or GetVirtualFlowPreferredFocusTarget)."),
-					__FUNCTION__, *GetNameSafe(InteractionState.PendingAction.TargetItem.Get()),
-					InteractionState.PendingAction.FocusAttempts);
-				InteractionState.PendingAction.Reset();
-				return true;
-			}
-
-			UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] Focus attempt failed for [%s] (Realized=%d), requesting %s"),
-				__FUNCTION__, *GetNameSafe(InteractionState.PendingAction.TargetItem.Get()),
-				bIsRealized, bIsRealized ? TEXT("Repaint") : TEXT("RefreshVisible"));
-			RequestRefresh(bIsRealized
-				? ERefreshStage::Repaint
-				: ERefreshStage::RefreshVisible);
-			bDidAnyWork = true;
-		}
+	}
+	
+	const bool bFocusDone = Action.Type != FDeferredViewAction::EType::FocusItem || Action.bFocusApplied;
+	if (bArrived && bFocusDone && !bFocusAppliedThisTick)
+	{
+		UE_LOG(LogVirtualFlowScroll, Log, TEXT("[%hs] %s completed for [%s] at offset %.1f"),
+			__FUNCTION__,
+			Action.Type == FDeferredViewAction::EType::FocusItem ? TEXT("FocusItem") : TEXT("ScrollIntoView"),
+			*GetNameSafe(Action.FocusTargetItem.Get()),
+			ScrollController.GetOffset());
+		Action.Reset();
+	}
+	else
+	{
+		// Still travelling (or focus still pending)
+		RequestRefresh(ERefreshStage::RefreshVisible);
 	}
 
-	return bDidAnyWork;
+	return true;
 }
 
 bool SVirtualFlowView::MeasureAndFeedBack()
@@ -2219,7 +2251,12 @@ void SVirtualFlowView::ForwardPendingViewFocus()
 		InteractionState.bPendingViewFocusForward = false;
 		OwnerWidget->NotifyItemFocusChanged(TargetItem, OwnerWidget->GetFirstWidgetForItem(TargetItem));
 		OwnerWidget->ApplySelectOnFocus(TargetItem);
-		FSlateApplication::Get().SetKeyboardFocus(SlateTarget, InteractionState.PendingViewFocusCause);
+		{
+			// Guard against OnFocusReceived re-entrancy if the focus call bounces
+			// back to the view (see bSettingFocusProgrammatically).
+			TGuardValue<bool> ProgrammaticFocusGuard(bSettingFocusProgrammatically, true);
+			FSlateApplication::Get().SetUserFocus(GetOwnerSlateUserIndex(), SlateTarget, InteractionState.PendingViewFocusCause);
+		}
 		return;
 	}
 	
@@ -2279,45 +2316,65 @@ bool SVirtualFlowView::ScrollFocusedEntryOutOfBufferZone()
 	UObject* PreviousFocusedItem = InteractionState.LastTickFocusedItem.Get();
 	InteractionState.LastTickFocusedItem = FocusedItem;
 
-	if (FocusedItem == PreviousFocusedItem)
+	if (FocusedItem != PreviousFocusedItem)
+	{
+		UE_LOG(LogVirtualFlowInput, Verbose, TEXT("ScrollBuffer: Focus changed from [%s] to [%s]"),
+			*GetNameSafe(PreviousFocusedItem),
+			*GetNameSafe(FocusedItem));
+
+		if (IsValid(FocusedItem))
+		{
+			OwnerWidget->ApplySelectOnFocus(FocusedItem);
+			InteractionState.bPendingBufferCheck = true;
+		}
+		else
+		{
+			// Focus left the realized entries entirely, nothing to evaluate.
+			InteractionState.bPendingBufferCheck = false;
+		}
+	}
+
+	if (!InteractionState.bPendingBufferCheck || !IsValid(FocusedItem))
 	{
 		return false;
 	}
 
-	UE_LOG(LogVirtualFlowInput, Verbose, TEXT("ScrollBuffer: Focus changed from [%s] to [%s]"),
-		*GetNameSafe(PreviousFocusedItem),
-		*GetNameSafe(FocusedItem));
-
-	if (!IsValid(FocusedItem))
+	// Deferred evaluation
+	
+	// A FocusItem/FocusSection request deliberately placed this item at its
+	// destination, respect it and don't evict it from the buffer zone.
+	if (InteractionState.BufferScrollExemptItem.IsValid())
 	{
-		UE_LOG(LogVirtualFlowInput, Verbose, TEXT("ScrollBuffer: New focused item is null, skipping."));
-		return false;
+		UObject* ExemptItem = InteractionState.BufferScrollExemptItem.Get();
+		const bool bFocusedItemIsExempt =  FocusedItem == ExemptItem || FocusedItem == NavigationPolicy.ResolveOwningDisplayedItem(ExemptItem);
+
+		if (bFocusedItemIsExempt)
+		{
+			UE_LOG(LogVirtualFlowScroll, Verbose,
+				TEXT("ScrollBuffer: [%s] is exempt (programmatic placement), skipping buffer eviction."),
+				*GetNameSafe(FocusedItem));
+			InteractionState.bPendingBufferCheck = false;
+			return false;
+		}
+
+		UE_LOG(LogVirtualFlowScroll, Verbose,
+			TEXT("ScrollBuffer: Focus moved from exempt [%s] to [%s], clearing exemption."),
+			*GetNameSafe(ExemptItem), *GetNameSafe(FocusedItem));
+		InteractionState.BufferScrollExemptItem.Reset();
 	}
 
-	// --- Apply select-on-focus for externally-driven focus transitions ---
-	//
-	// When Slate's spatial navigation moves focus to a visible entry (OnNavigation
-	// returns Explicit), the focus change bypasses TryFocusRealizedItem entirely --
-	// no VirtualFlow code path calls ApplySelectOnFocus for those transitions.
-	// This is the only pipeline phase that observes ALL focus transitions
-	// (regardless of how focus arrived), so it must apply the policy here.
-	//
-	// This runs before the buffer-scroll guards: selection should follow focus
-	// even when scroll adjustments are suppressed by a pending action, active
-	// panning, or a zero-pixel buffer configuration.
-	OwnerWidget->ApplySelectOnFocus(FocusedItem);
-
-	// --- Guard: skip buffer-scroll logic when buffer is disabled ---
+	// Skip buffer-scroll logic when buffer is disabled
 	const float Buffer = OwnerWidget->GetNavigationScrollBuffer();
 	if (Buffer <= 0.0f)
 	{
+		InteractionState.bPendingBufferCheck = false;
 		return false;
 	}
 
-	// --- Guard: don't interfere with deferred actions or active panning ---
+	// Don't interfere with deferred actions or active panning
 	if (InteractionState.PendingAction.IsValid() || ScrollController.IsPointerPanning())
 	{
-		UE_LOG(LogVirtualFlowScroll, Verbose, TEXT("ScrollBuffer: Skipping -- pending action or panning active."));
+		UE_LOG(LogVirtualFlowScroll, Verbose, TEXT("ScrollBuffer: Deferring, pending action or panning active."));
 		return false;
 	}
 
@@ -2336,10 +2393,14 @@ bool SVirtualFlowView::ScrollFocusedEntryOutOfBufferZone()
 
 	if (FocusedSnapshotIndex == INDEX_NONE || !LayoutCache.CurrentLayout.Items.IsValidIndex(FocusedSnapshotIndex))
 	{
-		UE_LOG(LogVirtualFlowScroll, Verbose, TEXT("ScrollBuffer: Focused item [%s] has no layout snapshot index, skipping."),
+		// Defers: the item may still be mid-realization or a layout rebuild may be in flight this tick, retry on a later tick.
+		UE_LOG(LogVirtualFlowScroll, Verbose, TEXT("ScrollBuffer: Focused item [%s] has no layout snapshot index, deferring."),
 			*GetNameSafe(FocusedItem));
 		return false;
 	}
+
+	// The evaluation runs now, consume the pending check regardless of outcome.
+	InteractionState.bPendingBufferCheck = false;
 
 	// Use layout-math buffer logic instead of widget geometry.
 	// CachedGeometry is from last frame's paint pass and doesn't reflect
@@ -2807,9 +2868,9 @@ void SVirtualFlowView::BuildDesiredVisibleSet(
 	// bypass the construction budget for it.
 	const UObject* PendingFocusDisplayedItem = nullptr;
 	if (InteractionState.PendingAction.Type == FDeferredViewAction::EType::FocusItem
-		&& InteractionState.PendingAction.TargetItem.IsValid())
+		&& InteractionState.PendingAction.FocusTargetItem.IsValid())
 	{
-		UObject* ActionTarget = InteractionState.PendingAction.TargetItem.Get();
+		UObject* ActionTarget = InteractionState.PendingAction.FocusTargetItem.Get();
 		const UObject* DisplayedOwner = NavigationPolicy.ResolveOwningDisplayedItem(ActionTarget);
 		PendingFocusDisplayedItem = IsValid(DisplayedOwner) ? DisplayedOwner : ActionTarget;
 	}
@@ -3714,6 +3775,13 @@ void SVirtualFlowView::UpdateScrollbar() const
 void SVirtualFlowView::HandleScrollBarScrolled(const float OffsetFraction)
 {
 	UE_LOG(LogVirtualFlowScroll, Verbose, TEXT("[%hs] OffsetFraction=%.4f"), __FUNCTION__, OffsetFraction);
+
+	// User input takes over: cancel any in-flight deferred scroll/focus action
+	// so its per-tick re-aim doesn't fight the scrollbar drag. (This callback
+	// only fires for USER scrolling -- UpdateScrollbar syncs state with
+	// bCallOnUserScrolled=false, so there is no programmatic feedback here.)
+	InteractionState.PendingAction.Reset();
+
 	const float ContentMainExtent = GetContentMainExtent();
 	const float MaxScrollOffset = GetMaxScrollOffset();
 	const float MainExtent = GetViewportMainExtent();
@@ -3867,6 +3935,75 @@ float SVirtualFlowView::ComputeTargetScrollOffsetForItem(const int32 SnapshotInd
 	}
 }
 
+bool SVirtualFlowView::IsItemFocusedOrPendingFocus(UObject* InItem) const
+{
+	if (!IsValid(InItem))
+	{
+		return false;
+	}
+
+	// An in-flight deferred action already targeting this item will handle focus itself
+	if (InteractionState.PendingAction.IsValid())
+	{
+		UObject* PendingTarget = InteractionState.PendingAction.FocusTargetItem.Get();
+		if (PendingTarget == InItem
+			|| NavigationPolicy.ResolveOwningDisplayedItem(PendingTarget) == InItem
+			|| PendingTarget == NavigationPolicy.ResolveOwningDisplayedItem(InItem))
+		{
+			return true;
+		}
+	}
+
+	// The item's realized entry (or a descendant) already holds keyboard focus.
+	const FRealizedPlacedItem* Realized = RealizedItemMap.Find(InItem);
+	if (!Realized)
+	{
+		UObject* DisplayedOwner = NavigationPolicy.ResolveOwningDisplayedItem(InItem);
+		if (IsValid(DisplayedOwner))
+		{
+			Realized = RealizedItemMap.Find(DisplayedOwner);
+		}
+	}
+	if (Realized && Realized->SlotBox.IsValid())
+	{
+		const uint32 UserIndex = GetOwnerSlateUserIndex();
+		if (Realized->SlotBox->HasUserFocus(UserIndex)
+			|| Realized->SlotBox->HasUserFocusedDescendants(UserIndex))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+float SVirtualFlowView::ComputeAimedScrollOffset(const int32 SnapshotIndex, const EVirtualFlowScrollDestination Destination) const
+{
+	float ScrollOffset = ComputeTargetScrollOffsetForItem(SnapshotIndex, Destination);
+
+	// When scroll snapping is enabled, align the offset to the snap candidate (section header) that contains this item.
+	if (OwnerWidget.IsValid() && OwnerWidget->GetEnableScrollSnapping() && !LayoutCache.CurrentLayout.Items.IsEmpty())
+	{
+		const float SnapAligned = ComputeContainingSnapOffset(SnapshotIndex, OwnerWidget->GetScrollSnapDestination());
+		if (SnapAligned >= 0.0f)
+		{
+			// Verify the target item would still be visible at the snap-aligned offset.
+			// For sections taller than the viewport this check fails, and we fall back
+			// to the raw item offset so the deferred action can converge.
+			const float ItemStartLocal = GetItemMainStart(SnapshotIndex) - SnapAligned;
+			const float ItemEndLocal = GetItemMainEnd(SnapshotIndex) - SnapAligned;
+			const float MainExtent = GetViewportMainExtent();
+
+			if (ItemEndLocal > 0.0f && ItemStartLocal < MainExtent)
+			{
+				ScrollOffset = SnapAligned;
+			}
+		}
+	}
+
+	return FMath::Clamp(ScrollOffset, 0.0f, GetMaxScrollOffset());
+}
+
 bool SVirtualFlowView::TryFocusRealizedItem(UObject* InItem) const
 {
 	if (!OwnerWidget.IsValid() || !IsValid(InItem))
@@ -3893,7 +4030,7 @@ bool SVirtualFlowView::TryFocusRealizedItem(UObject* InItem) const
 	}
 
 	// If the item's entry widget already holds keyboard focus (or a focusable
-	// descendant does), skip the SetKeyboardFocus call
+	// descendant does), skip the SetUserFocus call
 	if (Realized && Realized->SlotBox.IsValid())
 	{
 		if (Realized->SlotBox->HasUserFocus(UserIndex)
@@ -3906,6 +4043,11 @@ bool SVirtualFlowView::TryFocusRealizedItem(UObject* InItem) const
 		}
 	}
 
+	// Any SetUserFocus below can bounce focus to this
+	// view (see bSettingFocusProgrammatically) and fire OnFocusReceived
+	// synchronously. The guard makes that handler ignore our own bounces.
+	TGuardValue<bool> ProgrammaticFocusGuard(bSettingFocusProgrammatically, true);
+
 	UUserWidget* FocusedWidget = nullptr;
 
 	auto TrySetFocus = [&](UUserWidget* WidgetObject) -> bool
@@ -3917,7 +4059,14 @@ bool SVirtualFlowView::TryFocusRealizedItem(UObject* InItem) const
 		UWidget* FocusTarget = OwnerWidget->GetPreferredFocusTargetForEntryWidget(WidgetObject);
 		if (IsValid(FocusTarget) && FocusTarget->GetCachedWidget().IsValid())
 		{
-			FSlateApplication::Get().SetKeyboardFocus(FocusTarget->GetCachedWidget(), EFocusCause::SetDirectly);
+			if (!FocusTarget->GetCachedWidget()->SupportsKeyboardFocus())
+			{
+				UE_LOG(LogVirtualFlowInput, Verbose,
+					TEXT("[%hs] Preferred focus target [%s] does not support keyboard focus, using descendant fallback"),
+					__FUNCTION__, *GetNameSafe(FocusTarget));
+				return false;
+			}
+			FSlateApplication::Get().SetUserFocus(GetOwnerSlateUserIndex(), FocusTarget->GetCachedWidget(), EFocusCause::SetDirectly);
 			FocusedWidget = WidgetObject;
 			return true;
 		}
@@ -3934,10 +4083,9 @@ bool SVirtualFlowView::TryFocusRealizedItem(UObject* InItem) const
 	// tree that supports keyboard focus (e.g. SButton) and focus it
 	// directly. If that also fails, return false so the caller can
 	// retry after a paint pass settles the widget tree.
-	if (bFocused && Realized && Realized->SlotBox.IsValid())
+	if (Realized && Realized->SlotBox.IsValid())
 	{
-		if (!Realized->SlotBox->HasUserFocus(UserIndex)
-			&& !Realized->SlotBox->HasUserFocusedDescendants(UserIndex))
+		if (!Realized->SlotBox->HasUserFocus(UserIndex) && !Realized->SlotBox->HasUserFocusedDescendants(UserIndex))
 		{
 			TSharedPtr<SWidget> FocusableDescendant;
 			TFunction<bool(TSharedRef<SWidget>)> FindFocusable = [&](TSharedRef<SWidget> Parent) -> bool
@@ -3959,16 +4107,17 @@ bool SVirtualFlowView::TryFocusRealizedItem(UObject* InItem) const
 				return false;
 			};
 
-			FindFocusable(Realized->SlotBox.ToSharedRef());
+			(void)FindFocusable(Realized->SlotBox.ToSharedRef());
 			if (FocusableDescendant.IsValid())
 			{
-				FSlateApplication::Get().SetKeyboardFocus(FocusableDescendant, EFocusCause::SetDirectly);
+				FSlateApplication::Get().SetUserFocus(GetOwnerSlateUserIndex(), FocusableDescendant, EFocusCause::SetDirectly);
 			}
 
-			if (!Realized->SlotBox->HasUserFocus(UserIndex)
-				&& !Realized->SlotBox->HasUserFocusedDescendants(UserIndex))
+			bFocused = Realized->SlotBox->HasUserFocus(UserIndex) || Realized->SlotBox->HasUserFocusedDescendants(UserIndex);
+
+			if (bFocused && !IsValid(FocusedWidget))
 			{
-				bFocused = false;
+				FocusedWidget = OwnerWidget->GetFirstWidgetForItem(InItem);
 			}
 		}
 	}
@@ -4068,6 +4217,9 @@ FReply SVirtualFlowView::OnMouseButtonDown(const FGeometry& MyGeometry, const FP
 			return SCompoundWidget::OnMouseButtonDown(MyGeometry, MouseEvent);
 		}
 
+		// User input takes over: cancel any in-flight deferred scroll/focus action
+		InteractionState.PendingAction.Reset();
+
 		ScrollController.BeginPan(MouseEvent.GetScreenSpacePosition(), false);
 		UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] Right-click pan started"), __FUNCTION__);
 		return FReply::Handled().CaptureMouse(SharedThis(this));
@@ -4117,6 +4269,10 @@ FReply SVirtualFlowView::OnTouchStarted(const FGeometry& MyGeometry, const FPoin
 
 	UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] Touch pan started at (%.0f, %.0f)"),
 		__FUNCTION__, InTouchEvent.GetScreenSpacePosition().X, InTouchEvent.GetScreenSpacePosition().Y);
+
+	// User input takes over: cancel any in-flight deferred scroll/focus action
+	InteractionState.PendingAction.Reset();
+
 	ScrollController.BeginPan(InTouchEvent.GetScreenSpacePosition(), true);
 	return FReply::Handled().CaptureMouse(SharedThis(this));
 }
@@ -4153,6 +4309,9 @@ FReply SVirtualFlowView::OnMouseWheel(const FGeometry& MyGeometry, const FPointe
 	{
 		return FReply::Unhandled();
 	}
+
+	// User input takes over: cancel any in-flight deferred scroll/focus action
+	InteractionState.PendingAction.Reset();
 
 	const float Delta = -(MouseEvent.GetWheelDelta() * OwnerWidget->GetWheelScrollAmount());
 	UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] WheelDelta=%.2f, ScrollDelta=%.1f, CurrentOffset=%.1f"),
@@ -4368,6 +4527,21 @@ FReply SVirtualFlowView::OnFocusReceived(const FGeometry& MyGeometry, const FFoc
 	if (!OwnerWidget.IsValid())
 	{
 		return FReply::Unhandled();
+	}
+	
+	if (bSettingFocusProgrammatically)
+	{
+		UE_LOG(LogVirtualFlowInput, Verbose,
+			TEXT("[%hs] Ignoring view focus received during programmatic entry focus"), __FUNCTION__);
+		return FReply::Handled();
+	}
+	
+	if (InteractionState.PendingAction.Type == FDeferredViewAction::EType::FocusItem && InteractionState.PendingAction.IsValid())
+	{
+		UE_LOG(LogVirtualFlowInput, Verbose,
+			TEXT("[%hs] View focus received while FocusItem action pending for [%s], deferring to it"),
+			__FUNCTION__, *GetNameSafe(InteractionState.PendingAction.FocusTargetItem.Get()));
+		return FReply::Handled();
 	}
 
 	const EVirtualFlowViewFocusPolicy Policy = OwnerWidget->GetViewFocusPolicy();
