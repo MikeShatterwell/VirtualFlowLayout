@@ -4314,6 +4314,17 @@ FReply SVirtualFlowView::OnMouseWheel(const FGeometry& MyGeometry, const FPointe
 	InteractionState.PendingAction.Reset();
 
 	const float Delta = -(MouseEvent.GetWheelDelta() * OwnerWidget->GetWheelScrollAmount());
+	const float Current = ScrollController.GetOffset();
+	const float MaxOffset = GetMaxScrollOffset();
+	const bool bCanScroll =
+		(Delta < 0.0f && Current > KINDA_SMALL_NUMBER) ||
+		(Delta > 0.0f && Current < MaxOffset - KINDA_SMALL_NUMBER);
+
+	if (!bCanScroll)
+	{
+		return FReply::Unhandled();
+	}
+	
 	UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] WheelDelta=%.2f, ScrollDelta=%.1f, CurrentOffset=%.1f"),
 		__FUNCTION__, MouseEvent.GetWheelDelta(), Delta, ScrollController.GetOffset());
 	ApplyWheelScrollDelta(Delta);
