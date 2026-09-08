@@ -450,7 +450,7 @@ struct FRealizedPlacedItem
  * navigation would pick among painted ones. It is not guaranteed to: leading edges within
  * Slate's 0.1 compare window count as tied and resolve by cross-axis coverage of the
  * current entry (entries lying inside it all tie and keep reading order, an entry
- * extending past it wins only when it covers more than half of it), then reading order
+ * extending past it wins only when it clearly covers more than half of it), then reading order
  * (smallest cross-axis start), whereas Slate breaks such ties by hittest-cell visiting
  * order; and Slate sweeps from the focused widget's own rect while this policy uses the
  * entry's layout slot.
@@ -488,8 +488,8 @@ public:
 	 *      count as tied (several entries under a wider one, or a narrow entry straddling
 	 *      two tracks) and resolve by cross-axis coverage of the current entry: entries
 	 *      lying inside it all tie and keep reading order, an entry extending past it
-	 *      wins only when it covers more than half of it (a straddled entry prefers the
-	 *      track it mostly covers), then reading order, i.e. the smallest cross-axis start.
+	 *      wins only when it clearly covers more than half of it (a straddled entry prefers
+	 *      the track it mostly covers), then reading order, i.e. the smallest cross-axis start.
 	 *   3. When nothing overlaps (a shorter final row, staggered masonry columns), the
 	 *      candidate with the smallest combined main-axis gap plus cross-axis gap (the
 	 *      distance between the two cross ranges) wins instead, so focus does not leave the

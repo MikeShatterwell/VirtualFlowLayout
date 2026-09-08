@@ -1335,6 +1335,14 @@ FReply UVirtualFlowView::HandleItemClicked(UUserWidget* ItemWidget, UObject* Ite
 	{
 		NotifyItemFocusChanged(Item, ItemWidget);
 	}
+	else if (IsValid(Item))
+	{
+		// Re-click of the already reported item: reaffirm the report (no
+		// re-broadcast) so the view's focus-observation phase treats it as fresh
+		// and keeps the clicked entry instead of refining it to the nested item
+		// the preferred focus target may live in.
+		++FocusReportSerial;
+	}
 
 	if (!bDoubleClick && IsValid(Item))
 	{

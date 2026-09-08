@@ -505,15 +505,18 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		// Cross-axis coverage key for tied leading edges (0..1, a single scalar so the
 		// single-pass comparison stays transitive):
 		//  - a candidate whose cross range lies inside the current entry's scores a
-		//    fixed 0.5, so entries under a wider one all tie and keep reading order;
+		//    fixed value just above one half, so entries under a wider one all tie
+		//    and keep reading order;
 		//  - a candidate extending past the current entry scores the share of the
 		//    current entry it covers, so it beats the contained ones only when it
-		//    covers more than half of it: a straddled entry prefers the track it
-		//    mostly covers, and a sliver at the edge never beats a mostly-covering
-		//    neighbour.
+		//    clearly covers more than half of it: a straddled entry prefers the track
+		//    it mostly covers, a sliver at the edge never beats a mostly-covering
+		//    neighbour, and an exact half (which column spacing can nudge either
+		//    way) loses to a contained entry rather than flipping with the spacing.
 		const bool bContainedInCurrent = CrossOverlap >= Candidate.Width - CrossAxisSweepInset;
 		const float CoverageOfCurrent = FMath::Clamp(FMath::Max(0.0f, CrossOverlap) / FMath::Max(KINDA_SMALL_NUMBER, Current.Width), 0.0f, 1.0f);
-		const float CrossCoverage = bContainedInCurrent ? 0.5f : CoverageOfCurrent;
+		const float ContainedCoverageKey = 0.5f + 2.0f * CrossCoverageTieTolerance;
+		const float CrossCoverage = bContainedInCurrent ? ContainedCoverageKey : CoverageOfCurrent;
 
 		const bool bBeatsOverlapping = bOverlaps && IsBetterOverlapping(Gap, CrossCoverage, Candidate.X, BestOverlapping);
 		const bool bBeatsInDirection = BestOverlapping.SnapshotIndex == INDEX_NONE
