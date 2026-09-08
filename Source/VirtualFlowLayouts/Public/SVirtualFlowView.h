@@ -419,6 +419,12 @@ struct FRealizedPlacedItem
  * Encapsulates the spatial and logical navigation policy for a VirtualFlowView.
  * Given a display model, layout snapshot, and the owning UVirtualFlowView, resolves
  * directional navigation targets without depending on the scrolling/realization internals.
+ *
+ * Scroll-axis targets are resolved with the same geometric rule Slate's hittest grid
+ * applies to painted widgets (see FHittestGrid::FindNextFocusableWidget), but evaluated
+ * on the layout snapshot so entries that are not realized or not painted still count.
+ * That keeps the bridged (scroll-then-focus) destination consistent with where Slate's
+ * own spatial navigation would have landed had the entry been on screen.
  */
 class FVirtualFlowNavigationPolicy
 {
@@ -432,9 +438,6 @@ public:
 		UVirtualFlowView* InOwnerWidget,
 		const FOrientedAxes& InAxes);
 
-	/** Resolves the next selectable item using the spatial/navigation policy as keyboard navigation. */
-	UObject* FindAdjacentItem(UObject* CurrentItem, EUINavigation Direction) const;
-
 	/** Finds the preferred focusable item within the subtree of a displayed item, preferring selectable items. */
 	UObject* FindPreferredFocusTargetForDisplayedItem(const UObject* DisplayedItem, UObject* ReferenceItem) const;
 
@@ -447,7 +450,23 @@ public:
 	/** Finds a sibling item for cross-axis nested navigation (Left/Right when vertical, Up/Down when horizontal). No display-order fallback. */
 	UObject* FindSiblingForCrossAxisNavigation(UObject* CurrentItem, EUINavigation Direction) const;
 
-	/** Finds the best navigation target along the scroll direction using spatial scoring. No display-order fallback. */
+	/**
+	 * Finds the navigation target along the scroll axis (Up/Down when vertical, Left/Right
+	 * when horizontal) using the hittest-grid rule on layout-space rects:
+	 *
+	 *   1. Candidates must lie strictly in the pressed direction: their leading edge sits
+	 *      past the current entry's trailing edge (a 2x2 block beside a 1x1 entry is
+	 *      neither above nor below it).
+	 *   2. Among candidates that overlap the current entry across the scroll axis, the one
+	 *      whose leading edge is nearest wins; ties go to the closest cross-axis centre.
+	 *   3. When nothing overlaps (a shorter final row, staggered masonry columns), the
+	 *      nearest candidate in that direction wins instead, so focus does not leave the
+	 *      view while entries remain beyond.
+	 *
+	 * Candidates without a focusable target are skipped. Returns nullptr when no focusable
+	 * entry lies in that direction at all, i.e. focus may leave the view. Returns the first
+	 * or last focusable item when CurrentItem is null.
+	 */
 	UObject* FindBestFocusTargetInScrollDirection(UObject* CurrentItem, EUINavigation Direction) const;
 
 private:
@@ -458,10 +477,18 @@ private:
 	TWeakObjectPtr<UVirtualFlowView> OwnerWidget = nullptr;
 	FOrientedAxes Axes;
 
-	// --- Scoring constants (layout-space: Y = main/scroll axis, X = cross axis) ---
-	static constexpr float MainAxisDistanceWeight = 1000.0f;
-	static constexpr float CrossAxisOverlapBonus = 0.25f;
-	static constexpr float MinMainAxisDelta = 1.0f;
+	// --- Spatial rule constants (layout-space: Y = main/scroll axis, X = cross axis).
+	//     Values mirror FHittestGrid::FindNextFocusableWidget so painted and bridged
+	//     navigation agree on the destination. ---
+
+	/** A candidate lies in the navigation direction once its leading edge passes the current trailing edge by more than this. */
+	static constexpr float DirectionTolerance = 0.1f;
+	/** The cross-axis sweep is the current entry inset by this on both sides, so edge-adjacent tracks never count as overlapping. */
+	static constexpr float CrossAxisSweepInset = 0.5f;
+	/** Leading edges closer together than this are tied and resolved by cross-axis proximity. */
+	static constexpr float MainAxisTieTolerance = 1.0f;
+	/** Cross-axis centre distances closer together than this are tied and resolved by cross-axis start. */
+	static constexpr float CrossAxisTieTolerance = 0.5f;
 };
 
 // ---------------------------------------------------------------------------
@@ -851,6 +878,24 @@ private:
 	 * Returns nullptr if the item is not realized or has no focusable descendant.
 	 */
 	TSharedPtr<SWidget> FindFocusableSlateWidgetForItem(UObject* InItem) const;
+
+	/**
+	 * Scroll destination used when navigation must reveal an entry: the snap
+	 * destination while scroll snapping is enabled, otherwise Nearest.
+	 */
+	EVirtualFlowScrollDestination GetNavigationRevealDestination() const;
+
+	/**
+	 * FNavigationReply::CustomBoundary delegate returned by OnNavigation for
+	 * scroll-axis navigation. Slate runs its hittest-grid spatial navigation
+	 * across this view's painted entries first and only calls this when no
+	 * painted focusable widget lies in NavDir inside the view. TargetItem is the
+	 * layout-space neighbour resolved by the navigation policy: when it is
+	 * realized and visible its focusable widget is returned so Slate focuses it
+	 * directly, otherwise the view scrolls it into view and a deferred FocusItem
+	 * action lands focus once it is realized (bridged navigation).
+	 */
+	TSharedPtr<SWidget> HandleNavigationBeyondPaintedEntries(EUINavigation NavDir, TWeakObjectPtr<UObject> TargetItem);
 
 	// --- Realization helpers ---
 

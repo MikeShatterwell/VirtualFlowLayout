@@ -750,18 +750,34 @@ private:
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus", meta = (ClampMin = 0.0))
 	float NavigationScrollBuffer = 64.0f;
 
+	/**
+	 * Bridges Up/Down navigation across virtualized entries when the view scrolls
+	 * vertically. Slate's own spatial navigation still moves focus between the
+	 * painted entries (pressing Up lands on the entry spatially above the focused
+	 * widget); only when the entry in the pressed direction is not painted does the
+	 * view scroll it into view and focus it once it is realized. When disabled,
+	 * focus stops at (or leaves the view from) the last painted entry.
+	 * Ignored when Orientation is Horizontal.
+	 */
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus")
 	bool bBridgeVirtualizedVerticalNavigation = true;
 
+	/**
+	 * Bridges Left/Right navigation across virtualized entries when the view scrolls
+	 * horizontally. See bBridgeVirtualizedVerticalNavigation.
+	 * Ignored when Orientation is Vertical.
+	 */
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus")
 	bool bBridgeVirtualizedHorizontalNavigation = true;
 
 	/**
-	 * Minimum time (seconds) between successive navigation actions that trigger scrolling.
-	 * When holding a direction key, Slate fires OnNavigation on every key repeat.
-	 * This delay prevents focus from advancing faster than the scroll animation can
-	 * follow, which otherwise causes focus to target unrealized entries and get lost.
-	 * Set to 0 to disable rate limiting.
+	 * Minimum time (seconds) between successive navigation presses while a
+	 * navigation-driven scroll is still in flight. When holding a direction key,
+	 * Slate fires OnNavigation on every key repeat; this delay keeps focus from
+	 * advancing faster than the scroll animation can follow, which otherwise
+	 * causes focus to target unrealized entries and get lost. Navigation between
+	 * already painted entries is never rate limited.
+	 * Set to 0 to disable rate limiting (each press lands the in-flight scroll immediately).
 	 */
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus", meta = (ClampMin = 0.0, ClampMax = 1.0, UIMin = 0.0, UIMax = 0.5))
 	float NavigationRepeatDelay = 0.12f;
