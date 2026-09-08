@@ -379,7 +379,7 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		int32 SnapshotIndex = INDEX_NONE;
 		UObject* FocusTarget = nullptr;
 		float Gap = 0.0f;
-		float CrossOverlapShare = 0.0f;
+		float CrossCoverage = 0.0f;
 		float CrossDistance = 0.0f;
 		float CrossStart = 0.0f;
 	};
@@ -391,13 +391,13 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 
 	// Overlapping slot: closer leading edge wins, with Slate's 0.1 compare window as
 	// the tie window. Tied candidates (several entries under a wider one, a narrow
-	// entry straddling two tracks) resolve by the larger share of the narrower cross
-	// extent that the two share -- entries fully under a wider one all score 1 and
-	// keep reading order, a straddled entry prefers the track it mostly covers --
-	// then in reading order (smallest cross-axis start). Slate breaks the same tie
-	// by hittest-cell visiting order, which the layout snapshot cannot reproduce,
+	// entry straddling two tracks) resolve by the cross-axis coverage key computed
+	// in the loop -- entries lying inside the current one all tie and keep reading
+	// order, an entry extending past it wins only when it covers more than half of
+	// it -- then in reading order (smallest cross-axis start). Slate breaks the same
+	// tie by hittest-cell visiting order, which the layout snapshot cannot reproduce,
 	// so a deterministic rule is used instead.
-	auto IsBetterOverlapping = [](const float Gap, const float CrossOverlapShare, const float CrossStart, const FBestCandidate& Best) -> bool
+	auto IsBetterOverlapping = [](const float Gap, const float CrossCoverage, const float CrossStart, const FBestCandidate& Best) -> bool
 	{
 		if (Best.SnapshotIndex == INDEX_NONE)
 		{
@@ -407,9 +407,9 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		{
 			return Gap < Best.Gap;
 		}
-		if (!FMath::IsNearlyEqual(CrossOverlapShare, Best.CrossOverlapShare, CrossOverlapShareTieTolerance))
+		if (!FMath::IsNearlyEqual(CrossCoverage, Best.CrossCoverage, CrossCoverageTieTolerance))
 		{
-			return CrossOverlapShare > Best.CrossOverlapShare;
+			return CrossCoverage > Best.CrossCoverage;
 		}
 		return CrossStart < Best.CrossStart;
 	};
@@ -502,11 +502,20 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		// the gap between them (used as the fallback's cross-axis distance).
 		const float CrossOverlap = FMath::Min(Candidate.X + Candidate.Width, CurCrossEnd) - FMath::Max(Candidate.X, CurCrossStart);
 		const float CrossDistance = FMath::Max(0.0f, -CrossOverlap);
-		// Share of the narrower of the two cross extents that is overlapped (0..1).
-		const float NarrowerExtent = FMath::Max(KINDA_SMALL_NUMBER, FMath::Min(Candidate.Width, Current.Width));
-		const float CrossOverlapShare = FMath::Clamp(FMath::Max(0.0f, CrossOverlap) / NarrowerExtent, 0.0f, 1.0f);
+		// Cross-axis coverage key for tied leading edges (0..1, a single scalar so the
+		// single-pass comparison stays transitive):
+		//  - a candidate whose cross range lies inside the current entry's scores a
+		//    fixed 0.5, so entries under a wider one all tie and keep reading order;
+		//  - a candidate extending past the current entry scores the share of the
+		//    current entry it covers, so it beats the contained ones only when it
+		//    covers more than half of it: a straddled entry prefers the track it
+		//    mostly covers, and a sliver at the edge never beats a mostly-covering
+		//    neighbour.
+		const bool bContainedInCurrent = CrossOverlap >= Candidate.Width - CrossAxisSweepInset;
+		const float CoverageOfCurrent = FMath::Clamp(FMath::Max(0.0f, CrossOverlap) / FMath::Max(KINDA_SMALL_NUMBER, Current.Width), 0.0f, 1.0f);
+		const float CrossCoverage = bContainedInCurrent ? 0.5f : CoverageOfCurrent;
 
-		const bool bBeatsOverlapping = bOverlaps && IsBetterOverlapping(Gap, CrossOverlapShare, Candidate.X, BestOverlapping);
+		const bool bBeatsOverlapping = bOverlaps && IsBetterOverlapping(Gap, CrossCoverage, Candidate.X, BestOverlapping);
 		const bool bBeatsInDirection = BestOverlapping.SnapshotIndex == INDEX_NONE
 			&& IsBetterInDirection(Gap, CrossDistance, Candidate.X, BestInDirection);
 		if (!bBeatsOverlapping && !bBeatsInDirection)
@@ -525,7 +534,7 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		Resolved.SnapshotIndex = Index;
 		Resolved.FocusTarget = CandidateTarget;
 		Resolved.Gap = Gap;
-		Resolved.CrossOverlapShare = CrossOverlapShare;
+		Resolved.CrossCoverage = CrossCoverage;
 		Resolved.CrossDistance = CrossDistance;
 		Resolved.CrossStart = Candidate.X;
 
@@ -2263,8 +2272,13 @@ bool SVirtualFlowView::ScrollFocusedEntryOutOfBufferZone()
 			const bool bWithinEntry = LastReported == FocusedItem
 				|| NavigationPolicy.ResolveOwningDisplayedItem(LastReported) == FocusedItem;
 			const bool bFreshReport = OwnerWidget->GetFocusReportSerial() != InteractionState.LastSeenFocusReportSerial;
-			const bool bAgreesWithFocus = LastReported == FocusedItem
-				|| GetRegisteredWidgetFocus(LastReported, UserIndex) != ERegisteredWidgetFocus::NotFocused;
+			// LastReported != ReportItem here, so an entry-level report only ever
+			// competes with a nested item this phase observed holding focus; a stale
+			// entry-level report never outranks that evidence. A nested report agrees
+			// while its registered widget holds focus, or when no widget of it is
+			// registered here (child-view hosted) so this phase cannot tell.
+			const bool bAgreesWithFocus = LastReported != FocusedItem
+				&& GetRegisteredWidgetFocus(LastReported, UserIndex) != ERegisteredWidgetFocus::NotFocused;
 			if (bWithinEntry && (bFreshReport || (bEntryChanged && bAgreesWithFocus)))
 			{
 				ReportItem = LastReported;
