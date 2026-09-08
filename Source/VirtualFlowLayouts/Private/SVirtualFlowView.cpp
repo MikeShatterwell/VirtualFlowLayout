@@ -305,121 +305,6 @@ UObject* FVirtualFlowNavigationPolicy::FindPreferredFocusTargetForDisplayedItem(
 	return Candidates[FMath::Clamp(ReferenceSubIndex, 0, Candidates.Num() - 1)];
 }
 
-UObject* FVirtualFlowNavigationPolicy::FindSiblingForCrossAxisNavigation(UObject* CurrentItem, const EUINavigation Direction) const
-{
-	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
-
-	UVirtualFlowView* Owner = OwnerWidget.Get();
-
-	// Cross-axis directions: Left/Right when vertical, Up/Down when horizontal.
-	const bool bIsCrossAxis = Axes.IsCrossAxisNav(Direction);
-	if (!IsValid(Owner) || !IsValid(CurrentItem) || !DisplayModel || !bIsCrossAxis)
-	{
-		return nullptr;
-	}
-
-	const TFunction<UObject*(UObject*, bool)> FindFocusableInSubtree = [&](UObject* Root, const bool bForward) -> UObject*
-	{
-		if (!IsValid(Root))
-		{
-			return nullptr;
-		}
-		if (DisplayModel->ItemToFocusableOrderIndex.Contains(Root))
-		{
-			return Root;
-		}
-
-		TArray<UObject*> Descendants;
-		TSet<UObject*> DescendantVisited;
-		Owner->GatherDescendantsRecursive(Root, Descendants, DescendantVisited);
-
-		if (bForward)
-		{
-			for (const TWeakObjectPtr<UObject>& ItemPtr : DisplayModel->FocusableItemsInDisplayOrder)
-			{
-				UObject* Candidate = ItemPtr.Get();
-				if (IsValid(Candidate) && DescendantVisited.Contains(Candidate))
-				{
-					return Candidate;
-				}
-			}
-		}
-		else
-		{
-			for (int32 Index = DisplayModel->FocusableItemsInDisplayOrder.Num() - 1; Index >= 0; --Index)
-			{
-				UObject* Candidate = DisplayModel->FocusableItemsInDisplayOrder[Index].Get();
-				if (IsValid(Candidate) && DescendantVisited.Contains(Candidate))
-				{
-					return Candidate;
-				}
-			}
-		}
-		return nullptr;
-	};
-
-	// "Forward" in the cross-axis: Right (vertical mode) or Down (horizontal mode).
-	const bool bForward = Axes.bHorizontal
-		? (Direction == EUINavigation::Down)
-		: (Direction == EUINavigation::Right);
-	const UObject* OwningDisplayedItem = ResolveOwningDisplayedItem(CurrentItem);
-	if (OwningDisplayedItem == CurrentItem)
-	{
-		const FVirtualFlowItemLayout Layout = Owner->ResolveItemLayout(CurrentItem);
-		if (Layout.ChildrenPresentation == EVirtualFlowChildrenPresentation::NestedInEntry)
-		{
-			TArray<UObject*> Children;
-			Owner->GetItemChildrenResolved(CurrentItem, Children);
-			if (bForward)
-			{
-				for (UObject* Child : Children)
-				{
-					if (UObject* Found = FindFocusableInSubtree(Child, true))
-					{
-						return Found;
-					}
-				}
-			}
-			else
-			{
-				for (int32 ChildIndex = Children.Num() - 1; ChildIndex >= 0; --ChildIndex)
-				{
-					if (UObject* Found = FindFocusableInSubtree(Children[ChildIndex], false))
-					{
-						return Found;
-					}
-				}
-			}
-		}
-		return nullptr;
-	}
-
-	UObject* ParentItem = Owner->GetParentItem(CurrentItem);
-	if (!IsValid(ParentItem))
-	{
-		return nullptr;
-	}
-
-	TArray<UObject*> Siblings;
-	Owner->GetItemChildrenResolved(ParentItem, Siblings);
-	const int32 CurrentIndex = Siblings.IndexOfByKey(CurrentItem);
-	if (CurrentIndex == INDEX_NONE)
-	{
-		return nullptr;
-	}
-
-	const int32 Step = bForward ? 1 : -1;
-	for (int32 SiblingIndex = CurrentIndex + Step; Siblings.IsValidIndex(SiblingIndex); SiblingIndex += Step)
-	{
-		if (UObject* Found = FindFocusableInSubtree(Siblings[SiblingIndex], bForward))
-		{
-			return Found;
-		}
-	}
-
-	return nullptr;
-}
-
 UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObject* CurrentItem, const EUINavigation Direction) const
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
@@ -501,12 +386,14 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 
 	// Slate's rule: nearest leading edge among entries overlapping the sweep.
 	FBestCandidate BestOverlapping;
-	// Fallback when nothing overlaps: nearest leading edge among all entries in the direction.
+	// Fallback when nothing overlaps: smallest combined gap and cross-axis centre distance.
 	FBestCandidate BestInDirection;
 
-	// Closer leading edge wins; ties go to the closest cross-axis centre, then the
-	// smallest cross-axis start so the result is deterministic.
-	auto IsBetterThan = [](const float Gap, const float CrossDistance, const float CrossStart, const FBestCandidate& Best) -> bool
+	// Overlapping slot: closer leading edge wins; equal leading edges (several
+	// entries under a wider one) resolve in reading order, the smallest cross-axis
+	// start. Slate breaks the same tie by hittest-cell visiting order, which the
+	// layout snapshot cannot reproduce, so a deterministic rule is used instead.
+	auto IsBetterOverlapping = [](const float Gap, const float CrossStart, const FBestCandidate& Best) -> bool
 	{
 		if (Best.SnapshotIndex == INDEX_NONE)
 		{
@@ -516,9 +403,27 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		{
 			return Gap < Best.Gap;
 		}
-		if (!FMath::IsNearlyEqual(CrossDistance, Best.CrossDistance, CrossAxisTieTolerance))
+		return CrossStart < Best.CrossStart;
+	};
+
+	// Fallback slot: nothing overlaps, so a nearer track that is a little further
+	// along should beat a far track that is barely closer. Rank by gap plus
+	// cross-axis centre distance, then by gap, then in reading order.
+	auto IsBetterInDirection = [](const float Gap, const float CrossDistance, const float CrossStart, const FBestCandidate& Best) -> bool
+	{
+		if (Best.SnapshotIndex == INDEX_NONE)
 		{
-			return CrossDistance < Best.CrossDistance;
+			return true;
+		}
+		const float Combined = Gap + CrossDistance;
+		const float BestCombined = Best.Gap + Best.CrossDistance;
+		if (!FMath::IsNearlyEqual(Combined, BestCombined, MainAxisTieTolerance))
+		{
+			return Combined < BestCombined;
+		}
+		if (!FMath::IsNearlyEqual(Gap, Best.Gap, MainAxisTieTolerance))
+		{
+			return Gap < Best.Gap;
 		}
 		return CrossStart < Best.CrossStart;
 	};
@@ -587,9 +492,9 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		const bool bOverlaps = OverlapsSweep(Candidate);
 		const float CrossDistance = FMath::Abs((Candidate.X + 0.5f * Candidate.Width) - CurCrossMid);
 
-		const bool bBeatsOverlapping = bOverlaps && IsBetterThan(Gap, CrossDistance, Candidate.X, BestOverlapping);
+		const bool bBeatsOverlapping = bOverlaps && IsBetterOverlapping(Gap, Candidate.X, BestOverlapping);
 		const bool bBeatsInDirection = BestOverlapping.SnapshotIndex == INDEX_NONE
-			&& IsBetterThan(Gap, CrossDistance, Candidate.X, BestInDirection);
+			&& IsBetterInDirection(Gap, CrossDistance, Candidate.X, BestInDirection);
 		if (!bBeatsOverlapping && !bBeatsInDirection)
 		{
 			continue;
@@ -912,6 +817,7 @@ bool SVirtualFlowView::TryScrollItemIntoView(UObject* InItem, const EVirtualFlow
 	InteractionState.PendingAction.Destination = Destination; // Stored so ResolveDeferredActions can re-aim every tick
 	InteractionState.PendingAction.bFocusApplied = false;
 	InteractionState.PendingAction.FocusAttempts = 0; // Fresh action, fresh focus budget
+	InteractionState.PendingAction.bNavigationInitiated = false; // Navigation paths opt in after queueing
 
 	// Destination + snap alignment + clamping
 	const float ScrollOffset = ComputeAimedScrollOffset(*SnapshotIndex, Destination);
@@ -2297,36 +2203,42 @@ bool SVirtualFlowView::ScrollFocusedEntryOutOfBufferZone()
 	// --- Detect focus transitions (always update tracking) ---
 	UObject* PreviousFocusedItem = InteractionState.LastTickFocusedItem.Get();
 	InteractionState.LastTickFocusedItem = FocusedItem;
+	const bool bEntryChanged = FocusedItem != PreviousFocusedItem;
 
-	if (FocusedItem != PreviousFocusedItem)
+	// Slate-level detection is finer than the entry: focus can move between
+	// nested items or focusable children inside one entry without the entry changing.
+	const TSharedPtr<SWidget> FocusedSlateWidget = IsValid(FocusedItem)
+		? FSlateApplication::Get().GetUserFocusedWidget(UserIndex)
+		: TSharedPtr<SWidget>();
+	const bool bSlateFocusChanged = FocusedSlateWidget != InteractionState.LastTickFocusedSlateWidget.Pin();
+	InteractionState.LastTickFocusedSlateWidget = FocusedSlateWidget;
+
+	if (bEntryChanged)
 	{
 		UE_LOG(LogVirtualFlowInput, Verbose, TEXT("ScrollBuffer: Focus changed from [%s] to [%s]"),
 			*GetNameSafe(PreviousFocusedItem),
 			*GetNameSafe(FocusedItem));
 
-		if (IsValid(FocusedItem))
+		// When FocusedItem is null focus left the realized entries entirely: nothing to evaluate.
+		InteractionState.bPendingBufferCheck = IsValid(FocusedItem);
+	}
+
+	if (IsValid(FocusedItem) && (bEntryChanged || bSlateFocusChanged))
+	{
+		// Focus that Slate moved on its own (hittest-grid navigation within the
+		// painted entries, SetUserFocus from game code, a click on a nested
+		// widget) bypasses every path that reports focus to the owner. This is
+		// the one phase that observes every transition, so report it here, at
+		// the granularity of the item that actually holds focus (a nested item
+		// inside the entry when there is one). Paths that already reported --
+		// TryFocusRealizedItem, HandleItemClicked -- leave LastFocusedItem equal
+		// to that item, so nothing is reported twice.
+		UObject* FocusedLeafItem = ResolveFocusedItemWithinEntry(FocusedItem, UserIndex);
+		if (OwnerWidget->GetLastFocusedItem().Get() != FocusedLeafItem)
 		{
-			// Focus that Slate moved on its own (hittest-grid navigation within the
-			// painted entries, SetUserFocus from game code, a click on a nested
-			// widget) bypasses every path that reports focus to the owner. This is
-			// the one phase that observes every transition, so report it here. A
-			// more precise report already made for a nested item owned by this
-			// entry is left alone.
-			UObject* LastReported = OwnerWidget->GetLastFocusedItem().Get();
-			const bool bAlreadyReported = LastReported == FocusedItem
-				|| (IsValid(LastReported) && NavigationPolicy.ResolveOwningDisplayedItem(LastReported) == FocusedItem);
-			if (!bAlreadyReported)
-			{
-				OwnerWidget->NotifyItemFocusChanged(FocusedItem, OwnerWidget->GetFirstWidgetForItem(FocusedItem));
-			}
-			OwnerWidget->ApplySelectOnFocus(FocusedItem);
-			InteractionState.bPendingBufferCheck = true;
+			OwnerWidget->NotifyItemFocusChanged(FocusedLeafItem, OwnerWidget->GetFirstWidgetForItem(FocusedLeafItem));
 		}
-		else
-		{
-			// Focus left the realized entries entirely, nothing to evaluate.
-			InteractionState.bPendingBufferCheck = false;
-		}
+		OwnerWidget->ApplySelectOnFocus(FocusedLeafItem);
 	}
 
 	if (!InteractionState.bPendingBufferCheck || !IsValid(FocusedItem))
@@ -2358,13 +2270,11 @@ bool SVirtualFlowView::ScrollFocusedEntryOutOfBufferZone()
 		InteractionState.BufferScrollExemptItem.Reset();
 	}
 
-	// Skip buffer-scroll logic when buffer is disabled
+	// A zero buffer still reveals a focused entry that is partly clipped: Slate's
+	// spatial navigation focuses any painted entry, including one with only a few
+	// pixels inside the viewport, and ComputeTargetScrollOffsetForItem(Nearest)
+	// degrades to "just fully visible" when the buffer is 0.
 	const float Buffer = OwnerWidget->GetNavigationScrollBuffer();
-	if (Buffer <= 0.0f)
-	{
-		InteractionState.bPendingBufferCheck = false;
-		return false;
-	}
 
 	// Don't interfere with deferred actions or active panning
 	if (InteractionState.PendingAction.IsValid() || ScrollController.IsPointerPanning())
@@ -3999,7 +3909,7 @@ float SVirtualFlowView::ComputeAimedScrollOffset(const int32 SnapshotIndex, cons
 	return FMath::Clamp(ScrollOffset, 0.0f, GetMaxScrollOffset());
 }
 
-bool SVirtualFlowView::TryFocusRealizedItem(UObject* InItem) const
+bool SVirtualFlowView::TryFocusRealizedItem(UObject* InItem, const EFocusCause FocusCause) const
 {
 	if (!OwnerWidget.IsValid() || !IsValid(InItem))
 	{
@@ -4061,7 +3971,7 @@ bool SVirtualFlowView::TryFocusRealizedItem(UObject* InItem) const
 					__FUNCTION__, *GetNameSafe(FocusTarget));
 				return false;
 			}
-			FSlateApplication::Get().SetUserFocus(GetOwnerSlateUserIndex(), FocusTarget->GetCachedWidget(), EFocusCause::SetDirectly);
+			FSlateApplication::Get().SetUserFocus(GetOwnerSlateUserIndex(), FocusTarget->GetCachedWidget(), FocusCause);
 			FocusedWidget = WidgetObject;
 			return true;
 		}
@@ -4105,7 +4015,7 @@ bool SVirtualFlowView::TryFocusRealizedItem(UObject* InItem) const
 			(void)FindFocusable(Realized->SlotBox.ToSharedRef());
 			if (FocusableDescendant.IsValid())
 			{
-				FSlateApplication::Get().SetUserFocus(GetOwnerSlateUserIndex(), FocusableDescendant, EFocusCause::SetDirectly);
+				FSlateApplication::Get().SetUserFocus(GetOwnerSlateUserIndex(), FocusableDescendant, FocusCause);
 			}
 
 			bFocused = Realized->SlotBox->HasUserFocus(UserIndex) || Realized->SlotBox->HasUserFocusedDescendants(UserIndex);
@@ -4372,10 +4282,33 @@ FNavigationReply SVirtualFlowView::OnNavigation(const FGeometry& MyGeometry, con
 	UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] NavDir=%d, UserIndex=%d"),
 		__FUNCTION__, static_cast<int32>(NavDir), InNavigationEvent.GetUserIndex());
 
+	// --- Detect simulation calls ---
+	bool bIsSimulation = false;
+#if WITH_INPUT_FLOW_DEBUGGER
+	bIsSimulation = InNavigationEvent.GetUserIndex() == UInputDebugSubsystem::SimulatedNavigationUserIndex;
+#endif
+
+	const bool bIsMainAxisNav = Axes.IsMainAxisNav(NavDir);
+
+	// --- A deferred focus is still landing ---
+	// A FocusItem queued by game code (FocusItem / FocusSection / view focus
+	// handoff), or by an earlier bridged press when this press is cross-axis,
+	// has not applied focus yet. Accepting the press now would move focus and
+	// then have the pending action pull it away again (or lose the requested
+	// item), so hold the press until the action lands. Bridged scrolls along
+	// the scroll axis are paced by the repeat delay further down instead.
+	if (!bIsSimulation && IsDeferredFocusLanding()
+		&& (!bIsMainAxisNav || !InteractionState.PendingAction.bNavigationInitiated))
+	{
+		UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] Deferred focus on [%s] still landing, holding nav (Custom)"),
+			__FUNCTION__, *GetNameSafe(InteractionState.PendingAction.FocusTargetItem.Get()));
+		return FNavigationReply::Custom(FNavigationDelegate());
+	}
+
 	// Only scroll-axis navigation can be bridged: scrolling never reveals a
 	// cross-axis neighbour, so Left/Right (vertical) and Up/Down (horizontal)
-	// stay entirely with Slate's hittest-grid navigation.
-	if (!Axes.IsMainAxisNav(NavDir))
+	// stay with Slate's hittest-grid navigation.
+	if (!bIsMainAxisNav)
 	{
 		return FNavigationReply::Escape();
 	}
@@ -4387,12 +4320,6 @@ FNavigationReply SVirtualFlowView::OnNavigation(const FGeometry& MyGeometry, con
 	{
 		return FNavigationReply::Escape();
 	}
-
-	// --- Detect simulation calls ---
-	bool bIsSimulation = false;
-#if WITH_INPUT_FLOW_DEBUGGER
-	bIsSimulation = InNavigationEvent.GetUserIndex() == UInputDebugSubsystem::SimulatedNavigationUserIndex;
-#endif
 
 	// Find which realized item currently holds keyboard focus
 	UObject* CurrentItem = nullptr;
@@ -4473,7 +4400,10 @@ FNavigationReply SVirtualFlowView::OnNavigation(const FGeometry& MyGeometry, con
 		// The hittest grid still reflects the pre-snap paint, so resolve this press
 		// through the deferred focus path instead of Slate's spatial search.
 		InteractionState.LastNavActionTime = Now;
-		TryFocusItem(TargetItem, GetNavigationRevealDestination());
+		if (TryFocusItem(TargetItem, GetNavigationRevealDestination()))
+		{
+			InteractionState.PendingAction.bNavigationInitiated = true;
+		}
 
 		UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] Scroll snapped, deferring focus to [%s] (Custom)."),
 			__FUNCTION__, *GetNameSafe(TargetItem));
@@ -4503,29 +4433,33 @@ TSharedPtr<SWidget> SVirtualFlowView::HandleNavigationBeyondPaintedEntries(const
 	// the layout neighbour lies outside the painted range and needs a scroll.
 	// Occasionally it is painted but its focusable widget does not overlap the
 	// focused one across the scroll axis (small buttons inside wide entries), or
-	// the widget itself was culled while its slot is partly visible. Hand such a
-	// target to Slate directly so focus still moves on this press.
+	// the widget itself was culled while its slot is partly visible. Focus such a
+	// target right away so focus still moves on this press.
 	UObject* DisplayedItem = NavigationPolicy.ResolveOwningDisplayedItem(TargetItem);
 	const int32* SnapshotIndex = IsValid(DisplayedItem)
 		? LayoutCache.CurrentLayout.ItemToPlacedIndex.Find(DisplayedItem)
 		: nullptr;
 	if (SnapshotIndex && IsItemVisibleInViewport(*SnapshotIndex))
 	{
-		TSharedPtr<SWidget> SlateTarget = FindFocusableSlateWidgetForItem(TargetItem);
-		if (SlateTarget.IsValid())
+		// Focus is moved here rather than handed back to Slate: TryFocusRealizedItem
+		// resolves nested items and preferred focus targets, and it reports to the
+		// owner only after focus has moved, so select-on-focus sees the target as
+		// focused and does not queue a redundant FocusItem action.
+		if (TryFocusRealizedItem(TargetItem, EFocusCause::Navigation))
 		{
-			UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] Target [%s] is visible, focusing directly (Dir=%d)."),
+			UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] Target [%s] is visible, focused directly (Dir=%d)."),
 				__FUNCTION__, *GetNameSafe(TargetItem), static_cast<int32>(NavDir));
-			OwnerWidget->NotifyItemFocusChanged(TargetItem, OwnerWidget->GetFirstWidgetForItem(TargetItem));
-			OwnerWidget->ApplySelectOnFocus(TargetItem);
-			return SlateTarget;
+			return nullptr;
 		}
 	}
 
 	// Bridge: scroll the virtualized target into view; the deferred FocusItem
 	// action lands focus once it is realized and visible.
 	InteractionState.LastNavActionTime = FPlatformTime::Seconds();
-	TryFocusItem(TargetItem, GetNavigationRevealDestination());
+	if (TryFocusItem(TargetItem, GetNavigationRevealDestination()))
+	{
+		InteractionState.PendingAction.bNavigationInitiated = true;
+	}
 
 	UE_LOG(LogVirtualFlowInput, Log, TEXT("[%hs] Target [%s] not painted, scrolling into view (Dir=%d)."),
 		__FUNCTION__, *GetNameSafe(TargetItem), static_cast<int32>(NavDir));
@@ -4537,6 +4471,72 @@ EVirtualFlowScrollDestination SVirtualFlowView::GetNavigationRevealDestination()
 	return OwnerWidget.IsValid() && OwnerWidget->GetEnableScrollSnapping()
 		? OwnerWidget->GetScrollSnapDestination()
 		: EVirtualFlowScrollDestination::Nearest;
+}
+
+bool SVirtualFlowView::IsDeferredFocusLanding() const
+{
+	const FDeferredViewAction& Action = InteractionState.PendingAction;
+	return Action.IsValid()
+		&& Action.Type == FDeferredViewAction::EType::FocusItem
+		&& !Action.bFocusApplied;
+}
+
+UObject* SVirtualFlowView::ResolveFocusedItemWithinEntry(UObject* DisplayedItem, const uint32 UserIndex) const
+{
+	if (!OwnerWidget.IsValid() || !IsValid(DisplayedItem))
+	{
+		return DisplayedItem;
+	}
+
+	// Nested items register their widgets with the owner (managed child entry
+	// widgets), so the nested item whose widget holds or contains the focused
+	// widget is the one that really has focus. Nested items can nest further;
+	// the deepest match wins.
+	UObject* BestMatch = nullptr;
+	int32 BestDepth = -1;
+	for (const auto& Pair : FlattenedModel.NestedItemToOwningDisplayedItem)
+	{
+		if (Pair.Value.Get() != DisplayedItem)
+		{
+			continue;
+		}
+		UObject* NestedItem = Pair.Key.Get();
+		if (!IsValid(NestedItem))
+		{
+			continue;
+		}
+
+		bool bHoldsFocus = false;
+		for (const UUserWidget* NestedWidget : OwnerWidget->GetDisplayedWidgetsForItem(NestedItem))
+		{
+			const TSharedPtr<SWidget> NestedSlate = IsValid(NestedWidget) ? NestedWidget->GetCachedWidget() : TSharedPtr<SWidget>();
+			if (NestedSlate.IsValid()
+				&& (NestedSlate->HasUserFocus(UserIndex) || NestedSlate->HasUserFocusedDescendants(UserIndex)))
+			{
+				bHoldsFocus = true;
+				break;
+			}
+		}
+		if (!bHoldsFocus)
+		{
+			continue;
+		}
+
+		int32 Depth = 0;
+		for (const TWeakObjectPtr<UObject>* Parent = FlattenedModel.ParentMap.Find(NestedItem);
+			Parent && Parent->IsValid() && Parent->Get() != DisplayedItem && Depth < 64;
+			Parent = FlattenedModel.ParentMap.Find(Parent->Get()))
+		{
+			++Depth;
+		}
+		if (Depth > BestDepth)
+		{
+			BestDepth = Depth;
+			BestMatch = NestedItem;
+		}
+	}
+
+	return IsValid(BestMatch) ? BestMatch : DisplayedItem;
 }
 
 FReply SVirtualFlowView::OnFocusReceived(const FGeometry& MyGeometry, const FFocusEvent& InFocusEvent)
@@ -4670,21 +4670,14 @@ FReply SVirtualFlowView::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent&
 
 			if (IsValid(CurrentItem))
 			{
+				// Same scroll-axis policy as OnNavigation. Cross-axis presses are
+				// left to Slate: scrolling cannot reveal a cross-axis neighbour.
 				UObject* TargetItem = nullptr;
-				const bool bIsCrossAxisNav = Axes.IsCrossAxisNav(NavDir);
-				const bool bIsMainAxisNav = Axes.IsMainAxisNav(NavDir);
-				const bool bHandleCrossAxis = bIsCrossAxisNav && (Axes.bHorizontal
-					? OwnerWidget->GetBridgeVirtualizedVerticalNavigation()
-					: OwnerWidget->GetBridgeVirtualizedHorizontalNavigation());
-				const bool bHandleMainAxis = bIsMainAxisNav && (Axes.bHorizontal
+				const bool bHandleMainAxis = Axes.IsMainAxisNav(NavDir) && (Axes.bHorizontal
 					? OwnerWidget->GetBridgeVirtualizedHorizontalNavigation()
 					: OwnerWidget->GetBridgeVirtualizedVerticalNavigation());
 
-				if (bHandleCrossAxis)
-				{
-					TargetItem = NavigationPolicy.FindSiblingForCrossAxisNavigation(CurrentItem, NavDir);
-				}
-				else if (bHandleMainAxis)
+				if (bHandleMainAxis)
 				{
 					TargetItem = NavigationPolicy.FindBestFocusTargetInScrollDirection(CurrentItem, NavDir);
 				}

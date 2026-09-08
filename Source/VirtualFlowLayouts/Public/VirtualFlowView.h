@@ -745,7 +745,8 @@ private:
 	 *
 	 * For short entries the far edge reaches the buffer boundary first and stops;
 	 * for entries larger than the safe area the near edge wins instead. Set to 0
-	 * to restore the default "just barely visible" Nearest behaviour.
+	 * for no extra margin: a focused entry is still scrolled just far enough to
+	 * be fully visible.
 	 */
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus", meta = (ClampMin = 0.0))
 	float NavigationScrollBuffer = 64.0f;
@@ -771,12 +772,16 @@ private:
 	bool bBridgeVirtualizedHorizontalNavigation = true;
 
 	/**
-	 * Minimum time (seconds) between successive navigation presses while a
-	 * navigation-driven scroll is still in flight. When holding a direction key,
-	 * Slate fires OnNavigation on every key repeat; this delay keeps focus from
-	 * advancing faster than the scroll animation can follow, which otherwise
-	 * causes focus to target unrealized entries and get lost. Navigation between
-	 * already painted entries is never rate limited.
+	 * Minimum time (seconds) between successive scroll-axis navigation presses
+	 * while the view is still scrolling toward a target or a deferred focus
+	 * action is pending, however that scroll started (a bridged reveal, the
+	 * NavigationScrollBuffer adjustment that follows a hop between painted
+	 * entries, a smooth wheel scroll). When holding a direction key, Slate fires
+	 * OnNavigation on every key repeat; this delay keeps focus from advancing
+	 * faster than the scroll animation can follow, which otherwise causes focus
+	 * to target unrealized entries and get lost. A press that arrives after the
+	 * delay lands the in-flight scroll immediately and continues. While no scroll
+	 * is in flight, navigation between painted entries is not paced.
 	 * Set to 0 to disable rate limiting (each press lands the in-flight scroll immediately).
 	 */
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus", meta = (ClampMin = 0.0, ClampMax = 1.0, UIMin = 0.0, UIMax = 0.5))
