@@ -221,6 +221,14 @@ struct FVirtualFlowInteractionState
 	TWeakPtr<SWidget> LastTickFocusedSlateWidget;
 
 	/**
+	 * The owner's focus report serial as seen at the end of the previous
+	 * ScrollFocusedEntryOutOfBufferZone run. A different current serial means
+	 * another path (TryFocusRealizedItem, HandleItemClicked, OnFocusReceived)
+	 * reported focus since then, so that report is fresh rather than retained.
+	 */
+	uint32 LastSeenFocusReportSerial = 0;
+
+	/**
 	 * Item deliberately positioned by a programmatic FocusItem / FocusSection
 	 * request. While keyboard focus remains on this item, buffer-zone eviction
 	 * (ScrollFocusedEntryOutOfBufferZone) is suppressed entirely.
@@ -320,13 +328,6 @@ struct FOrientedAxes
 		return bHorizontal
 			? (Dir == EUINavigation::Left || Dir == EUINavigation::Right)
 			: (Dir == EUINavigation::Up || Dir == EUINavigation::Down);
-	}
-	/** True when the navigation direction is perpendicular to the scroll axis. */
-	FORCEINLINE bool IsCrossAxisNav(EUINavigation Dir) const
-	{
-		return bHorizontal
-			? (Dir == EUINavigation::Up || Dir == EUINavigation::Down)
-			: (Dir == EUINavigation::Left || Dir == EUINavigation::Right);
 	}
 	/** True when the navigation direction points forward along the main axis (Down for vertical, Right for horizontal). */
 	FORCEINLINE bool IsForwardOnMainAxis(EUINavigation Dir) const
@@ -447,10 +448,10 @@ struct FRealizedPlacedItem
  * the layout snapshot so entries that are not realized or not painted still count, which
  * normally makes the bridged (scroll-then-focus) destination the entry Slate's own spatial
  * navigation would pick among painted ones. It is not guaranteed to: leading edges within
- * Slate's 0.1 compare window count as tied and resolve by larger cross-axis overlap with
- * the current entry, then reading order (smallest cross-axis start), whereas Slate breaks
- * such ties by hittest-cell visiting order; and Slate sweeps from the focused widget's own
- * rect while this policy uses the entry's layout slot.
+ * Slate's 0.1 compare window count as tied and resolve by the larger shared portion of the
+ * narrower cross extent, then reading order (smallest cross-axis start), whereas Slate
+ * breaks such ties by hittest-cell visiting order; and Slate sweeps from the focused
+ * widget's own rect while this policy uses the entry's layout slot.
  */
 class FVirtualFlowNavigationPolicy
 {
@@ -483,8 +484,10 @@ public:
 	 *   2. Among candidates that overlap the current entry across the scroll axis, the one
 	 *      whose leading edge is nearest wins. Leading edges within DirectionTolerance
 	 *      count as tied (several entries under a wider one, or a narrow entry straddling
-	 *      two tracks) and resolve by larger cross-axis overlap with the current entry,
-	 *      then reading order, i.e. the smallest cross-axis start.
+	 *      two tracks) and resolve by the larger share of the narrower cross extent that
+	 *      the two share (entries fully under a wider one all score 1 and keep reading
+	 *      order; a straddled entry prefers the track it mostly covers), then reading
+	 *      order, i.e. the smallest cross-axis start.
 	 *   3. When nothing overlaps (a shorter final row, staggered masonry columns), the
 	 *      candidate with the smallest combined main-axis gap plus cross-axis gap (the
 	 *      distance between the two cross ranges) wins instead, so focus does not leave the
@@ -517,11 +520,10 @@ private:
 	 * Also the window within which overlapping candidates' leading edges count as tied.
 	 */
 	static constexpr float DirectionTolerance = 0.1f;
-	/**
-	 * The cross-axis sweep is the current entry inset by this on both sides, so edge-adjacent
-	 * tracks never count as overlapping. Also the window within which overlap lengths tie.
-	 */
+	/** The cross-axis sweep is the current entry inset by this on both sides, so edge-adjacent tracks never count as overlapping. */
 	static constexpr float CrossAxisSweepInset = 0.5f;
+	/** Shared portions of the narrower cross extent (0..1) closer together than this are tied and resolved by reading order. */
+	static constexpr float CrossOverlapShareTieTolerance = 0.01f;
 	/** Fallback distances closer together than this are tied and resolved by the next criterion; also bounds the scan's early exit. */
 	static constexpr float MainAxisTieTolerance = 1.0f;
 };
@@ -959,6 +961,17 @@ private:
 	 * displayed item itself.
 	 */
 	UObject* ResolveFocusedItemWithinEntry(UObject* DisplayedItem, uint32 UserIndex) const;
+
+	/** Whether the widgets an item has registered with the owner hold keyboard focus. */
+	enum class ERegisteredWidgetFocus : uint8
+	{
+		/** The owner knows no widget for the item (e.g. it is hosted by a child view), so nothing can be told. */
+		NoWidgetRegistered,
+		NotFocused,
+		/** A registered widget holds focus or contains the focused widget. */
+		Focused,
+	};
+	ERegisteredWidgetFocus GetRegisteredWidgetFocus(UObject* InItem, uint32 UserIndex) const;
 
 	// --- Realization helpers ---
 

@@ -379,7 +379,7 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		int32 SnapshotIndex = INDEX_NONE;
 		UObject* FocusTarget = nullptr;
 		float Gap = 0.0f;
-		float CrossOverlap = 0.0f;
+		float CrossOverlapShare = 0.0f;
 		float CrossDistance = 0.0f;
 		float CrossStart = 0.0f;
 	};
@@ -391,11 +391,13 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 
 	// Overlapping slot: closer leading edge wins, with Slate's 0.1 compare window as
 	// the tie window. Tied candidates (several entries under a wider one, a narrow
-	// entry straddling two tracks) resolve by larger cross-axis overlap with the
-	// current entry, then in reading order (smallest cross-axis start). Slate breaks
-	// the same tie by hittest-cell visiting order, which the layout snapshot cannot
-	// reproduce, so a deterministic rule is used instead.
-	auto IsBetterOverlapping = [](const float Gap, const float CrossOverlap, const float CrossStart, const FBestCandidate& Best) -> bool
+	// entry straddling two tracks) resolve by the larger share of the narrower cross
+	// extent that the two share -- entries fully under a wider one all score 1 and
+	// keep reading order, a straddled entry prefers the track it mostly covers --
+	// then in reading order (smallest cross-axis start). Slate breaks the same tie
+	// by hittest-cell visiting order, which the layout snapshot cannot reproduce,
+	// so a deterministic rule is used instead.
+	auto IsBetterOverlapping = [](const float Gap, const float CrossOverlapShare, const float CrossStart, const FBestCandidate& Best) -> bool
 	{
 		if (Best.SnapshotIndex == INDEX_NONE)
 		{
@@ -405,9 +407,9 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		{
 			return Gap < Best.Gap;
 		}
-		if (!FMath::IsNearlyEqual(CrossOverlap, Best.CrossOverlap, CrossAxisSweepInset))
+		if (!FMath::IsNearlyEqual(CrossOverlapShare, Best.CrossOverlapShare, CrossOverlapShareTieTolerance))
 		{
-			return CrossOverlap > Best.CrossOverlap;
+			return CrossOverlapShare > Best.CrossOverlapShare;
 		}
 		return CrossStart < Best.CrossStart;
 	};
@@ -500,8 +502,11 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		// the gap between them (used as the fallback's cross-axis distance).
 		const float CrossOverlap = FMath::Min(Candidate.X + Candidate.Width, CurCrossEnd) - FMath::Max(Candidate.X, CurCrossStart);
 		const float CrossDistance = FMath::Max(0.0f, -CrossOverlap);
+		// Share of the narrower of the two cross extents that is overlapped (0..1).
+		const float NarrowerExtent = FMath::Max(KINDA_SMALL_NUMBER, FMath::Min(Candidate.Width, Current.Width));
+		const float CrossOverlapShare = FMath::Clamp(FMath::Max(0.0f, CrossOverlap) / NarrowerExtent, 0.0f, 1.0f);
 
-		const bool bBeatsOverlapping = bOverlaps && IsBetterOverlapping(Gap, CrossOverlap, Candidate.X, BestOverlapping);
+		const bool bBeatsOverlapping = bOverlaps && IsBetterOverlapping(Gap, CrossOverlapShare, Candidate.X, BestOverlapping);
 		const bool bBeatsInDirection = BestOverlapping.SnapshotIndex == INDEX_NONE
 			&& IsBetterInDirection(Gap, CrossDistance, Candidate.X, BestInDirection);
 		if (!bBeatsOverlapping && !bBeatsInDirection)
@@ -520,7 +525,7 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		Resolved.SnapshotIndex = Index;
 		Resolved.FocusTarget = CandidateTarget;
 		Resolved.Gap = Gap;
-		Resolved.CrossOverlap = CrossOverlap;
+		Resolved.CrossOverlapShare = CrossOverlapShare;
 		Resolved.CrossDistance = CrossDistance;
 		Resolved.CrossStart = Candidate.X;
 
@@ -2244,16 +2249,26 @@ bool SVirtualFlowView::ScrollFocusedEntryOutOfBufferZone()
 		UObject* LastReported = OwnerWidget->GetLastFocusedItem().Get();
 		UObject* ReportItem = ResolveFocusedItemWithinEntry(FocusedItem, UserIndex);
 
-		// On the tick an entry gains focus, a report already made for it by a
-		// path that knew the exact target (TryFocusRealizedItem for a nested
-		// item, HandleItemClicked for the clicked item) stands: it can be more
-		// precise than this phase (nested widgets hosted by a child view are not
-		// registered here) and refining it would report the same press twice.
-		const bool bLastReportedIsWithinEntry = IsValid(LastReported)
-			&& (LastReported == FocusedItem || NavigationPolicy.ResolveOwningDisplayedItem(LastReported) == FocusedItem);
-		if (bEntryChanged && bLastReportedIsWithinEntry)
+		// A report already made for this entry by a path that knew the exact
+		// target (TryFocusRealizedItem for a nested item, HandleItemClicked for
+		// the clicked item, OnFocusReceived) stands: it can be more precise than
+		// this phase (nested widgets hosted by a child view are not registered
+		// here) and refining it would report the same press twice. It is trusted
+		// when it was made since the previous run of this phase. An older report
+		// is trusted only on an entry transition and only while it still agrees
+		// with the observed focus: LastFocusedItem is retained while focus is
+		// outside the view, so it may name a nested item that no longer holds it.
+		if (IsValid(LastReported) && LastReported != ReportItem)
 		{
-			ReportItem = LastReported;
+			const bool bWithinEntry = LastReported == FocusedItem
+				|| NavigationPolicy.ResolveOwningDisplayedItem(LastReported) == FocusedItem;
+			const bool bFreshReport = OwnerWidget->GetFocusReportSerial() != InteractionState.LastSeenFocusReportSerial;
+			const bool bAgreesWithFocus = LastReported == FocusedItem
+				|| GetRegisteredWidgetFocus(LastReported, UserIndex) != ERegisteredWidgetFocus::NotFocused;
+			if (bWithinEntry && (bFreshReport || (bEntryChanged && bAgreesWithFocus)))
+			{
+				ReportItem = LastReported;
+			}
 		}
 
 		const bool bReportChanged = ReportItem != LastReported;
@@ -2269,6 +2284,9 @@ bool SVirtualFlowView::ScrollFocusedEntryOutOfBufferZone()
 			OwnerWidget->ApplySelectOnFocus(ReportItem);
 		}
 	}
+
+	// Every report made up to here, this phase's own included, has now been seen.
+	InteractionState.LastSeenFocusReportSerial = OwnerWidget->GetFocusReportSerial();
 
 	if (!InteractionState.bPendingBufferCheck || !IsValid(FocusedItem))
 	{
@@ -4538,18 +4556,7 @@ UObject* SVirtualFlowView::ResolveFocusedItemWithinEntry(UObject* DisplayedItem,
 			continue;
 		}
 
-		bool bHoldsFocus = false;
-		for (const UUserWidget* NestedWidget : OwnerWidget->GetDisplayedWidgetsForItem(NestedItem))
-		{
-			const TSharedPtr<SWidget> NestedSlate = IsValid(NestedWidget) ? NestedWidget->GetCachedWidget() : TSharedPtr<SWidget>();
-			if (NestedSlate.IsValid()
-				&& (NestedSlate->HasUserFocus(UserIndex) || NestedSlate->HasUserFocusedDescendants(UserIndex)))
-			{
-				bHoldsFocus = true;
-				break;
-			}
-		}
-		if (!bHoldsFocus)
+		if (GetRegisteredWidgetFocus(NestedItem, UserIndex) != ERegisteredWidgetFocus::Focused)
 		{
 			continue;
 		}
@@ -4569,6 +4576,31 @@ UObject* SVirtualFlowView::ResolveFocusedItemWithinEntry(UObject* DisplayedItem,
 	}
 
 	return IsValid(BestMatch) ? BestMatch : DisplayedItem;
+}
+
+SVirtualFlowView::ERegisteredWidgetFocus SVirtualFlowView::GetRegisteredWidgetFocus(UObject* InItem, const uint32 UserIndex) const
+{
+	if (!OwnerWidget.IsValid() || !IsValid(InItem))
+	{
+		return ERegisteredWidgetFocus::NoWidgetRegistered;
+	}
+
+	const TArray<UUserWidget*> Widgets = OwnerWidget->GetDisplayedWidgetsForItem(InItem);
+	if (Widgets.IsEmpty())
+	{
+		return ERegisteredWidgetFocus::NoWidgetRegistered;
+	}
+
+	for (const UUserWidget* Widget : Widgets)
+	{
+		const TSharedPtr<SWidget> SlateWidget = IsValid(Widget) ? Widget->GetCachedWidget() : TSharedPtr<SWidget>();
+		if (SlateWidget.IsValid()
+			&& (SlateWidget->HasUserFocus(UserIndex) || SlateWidget->HasUserFocusedDescendants(UserIndex)))
+		{
+			return ERegisteredWidgetFocus::Focused;
+		}
+	}
+	return ERegisteredWidgetFocus::NotFocused;
 }
 
 FReply SVirtualFlowView::OnFocusReceived(const FGeometry& MyGeometry, const FFocusEvent& InFocusEvent)

@@ -1381,6 +1381,7 @@ void UVirtualFlowView::HandleItemHovered(UUserWidget* ItemWidget, UObject* Item,
 
 void UVirtualFlowView::NotifyItemFocusChanged(UObject* Item, UUserWidget* ItemWidget)
 {
+	++FocusReportSerial;
 	LastFocusedItem = Item;
 	OnItemFocused.Broadcast(Item, ItemWidget);
 }
