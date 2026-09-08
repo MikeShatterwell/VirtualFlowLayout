@@ -161,8 +161,10 @@ struct FDeferredViewAction
 
 	/**
 	 * True when directional navigation queued this action (a bridged scroll).
-	 * Navigation presses pace and may snap such actions; a focus request made
-	 * by game code is left to land first instead.
+	 * Scroll-axis presses pace and may snap such actions through
+	 * NavigationRepeatDelay; while a focus request made by game code has not
+	 * landed, scroll-axis presses are held instead. Cross-axis presses are held
+	 * while any FocusItem action has not landed, whoever queued it.
 	 */
 	bool bNavigationInitiated = false;
 
@@ -443,10 +445,12 @@ struct FRealizedPlacedItem
  * applies to painted widgets (see FHittestGrid::FindNextFocusableWidget): in the pressed
  * direction, overlapping across the scroll axis, nearest leading edge. It is evaluated on
  * the layout snapshot so entries that are not realized or not painted still count, which
- * keeps the bridged (scroll-then-focus) destination consistent with where Slate's own
- * spatial navigation lands. Exact ties (several entries sharing the nearest leading edge
- * under a wider entry) are the one divergence: Slate resolves them by hittest-cell
- * visiting order, this policy by reading order (smallest cross-axis start).
+ * normally makes the bridged (scroll-then-focus) destination the entry Slate's own spatial
+ * navigation would pick among painted ones. It is not guaranteed to: leading edges within
+ * Slate's 0.1 compare window count as tied and resolve by larger cross-axis overlap with
+ * the current entry, then reading order (smallest cross-axis start), whereas Slate breaks
+ * such ties by hittest-cell visiting order; and Slate sweeps from the focused widget's own
+ * rect while this policy uses the entry's layout slot.
  */
 class FVirtualFlowNavigationPolicy
 {
@@ -477,13 +481,15 @@ public:
 	 *      the current entry's trailing edge (flush rows qualify; a 2x2 block beside a 1x1
 	 *      entry is neither above nor below it).
 	 *   2. Among candidates that overlap the current entry across the scroll axis, the one
-	 *      whose leading edge is nearest wins; equal leading edges (several entries under a
-	 *      wider one) resolve in reading order, i.e. the smallest cross-axis start.
+	 *      whose leading edge is nearest wins. Leading edges within DirectionTolerance
+	 *      count as tied (several entries under a wider one, or a narrow entry straddling
+	 *      two tracks) and resolve by larger cross-axis overlap with the current entry,
+	 *      then reading order, i.e. the smallest cross-axis start.
 	 *   3. When nothing overlaps (a shorter final row, staggered masonry columns), the
-	 *      candidate with the smallest combined main-axis gap plus cross-axis centre
-	 *      distance wins instead, so focus does not leave the view while entries remain
-	 *      beyond, and does not jump across several tracks when a nearer track is only
-	 *      slightly further along.
+	 *      candidate with the smallest combined main-axis gap plus cross-axis gap (the
+	 *      distance between the two cross ranges) wins instead, so focus does not leave the
+	 *      view while entries remain beyond, and does not jump across several tracks when a
+	 *      nearer track is only slightly further along.
 	 *
 	 * Candidates without a focusable target are skipped. Returns nullptr when no focusable
 	 * entry lies in that direction at all, i.e. focus may leave the view. Returns the first
@@ -506,13 +512,17 @@ private:
 
 	/**
 	 * A candidate counts as lying in the navigation direction unless its leading edge sits
-	 * more than this far BEFORE the current trailing edge (Slate's +/-0.1 compare). Flush
+	 * at least this far BEFORE the current trailing edge (Slate's +/-0.1 compare). Flush
 	 * edges, the zero-spacing default, qualify; entries beside the current one do not.
+	 * Also the window within which overlapping candidates' leading edges count as tied.
 	 */
 	static constexpr float DirectionTolerance = 0.1f;
-	/** The cross-axis sweep is the current entry inset by this on both sides, so edge-adjacent tracks never count as overlapping. */
+	/**
+	 * The cross-axis sweep is the current entry inset by this on both sides, so edge-adjacent
+	 * tracks never count as overlapping. Also the window within which overlap lengths tie.
+	 */
 	static constexpr float CrossAxisSweepInset = 0.5f;
-	/** Distances closer together than this are tied and resolved by the next criterion. */
+	/** Fallback distances closer together than this are tied and resolved by the next criterion; also bounds the scan's early exit. */
 	static constexpr float MainAxisTieTolerance = 1.0f;
 };
 
@@ -933,9 +943,12 @@ private:
 
 	/**
 	 * True while a deferred FocusItem action has been queued but has not landed
-	 * focus yet. Directional presses are held back while a focus request from
-	 * game code is in that state, so the request is not applied and then
-	 * overridden by the press (or lost to it).
+	 * focus yet (Type == FocusItem, !bFocusApplied). OnNavigation holds every
+	 * cross-axis press in that state, whoever queued the action: a Slate-driven
+	 * sideways move would be pulled back when the action lands. Scroll-axis
+	 * presses are held only when the action was not queued by navigation
+	 * (FocusItem / FocusSection / view focus handoff); navigation-initiated
+	 * bridges are paced by NavigationRepeatDelay instead.
 	 */
 	bool IsDeferredFocusLanding() const;
 

@@ -352,7 +352,6 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 	const float CurMainEnd    = Current.Y + Current.Height;
 	const float CurCrossStart = Current.X;
 	const float CurCrossEnd   = Current.X + Current.Width;
-	const float CurCrossMid   = 0.5f * (CurCrossStart + CurCrossEnd);
 
 	// The hittest grid sweeps the focused rect, inset on the cross axis, along the
 	// navigation direction and only considers widgets that intersect that sweep.
@@ -380,35 +379,42 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		int32 SnapshotIndex = INDEX_NONE;
 		UObject* FocusTarget = nullptr;
 		float Gap = 0.0f;
+		float CrossOverlap = 0.0f;
 		float CrossDistance = 0.0f;
 		float CrossStart = 0.0f;
 	};
 
 	// Slate's rule: nearest leading edge among entries overlapping the sweep.
 	FBestCandidate BestOverlapping;
-	// Fallback when nothing overlaps: smallest combined gap and cross-axis centre distance.
+	// Fallback when nothing overlaps: smallest combined main-axis gap and cross-axis gap.
 	FBestCandidate BestInDirection;
 
-	// Overlapping slot: closer leading edge wins; equal leading edges (several
-	// entries under a wider one) resolve in reading order, the smallest cross-axis
-	// start. Slate breaks the same tie by hittest-cell visiting order, which the
-	// layout snapshot cannot reproduce, so a deterministic rule is used instead.
-	auto IsBetterOverlapping = [](const float Gap, const float CrossStart, const FBestCandidate& Best) -> bool
+	// Overlapping slot: closer leading edge wins, with Slate's 0.1 compare window as
+	// the tie window. Tied candidates (several entries under a wider one, a narrow
+	// entry straddling two tracks) resolve by larger cross-axis overlap with the
+	// current entry, then in reading order (smallest cross-axis start). Slate breaks
+	// the same tie by hittest-cell visiting order, which the layout snapshot cannot
+	// reproduce, so a deterministic rule is used instead.
+	auto IsBetterOverlapping = [](const float Gap, const float CrossOverlap, const float CrossStart, const FBestCandidate& Best) -> bool
 	{
 		if (Best.SnapshotIndex == INDEX_NONE)
 		{
 			return true;
 		}
-		if (!FMath::IsNearlyEqual(Gap, Best.Gap, MainAxisTieTolerance))
+		if (!FMath::IsNearlyEqual(Gap, Best.Gap, DirectionTolerance))
 		{
 			return Gap < Best.Gap;
+		}
+		if (!FMath::IsNearlyEqual(CrossOverlap, Best.CrossOverlap, CrossAxisSweepInset))
+		{
+			return CrossOverlap > Best.CrossOverlap;
 		}
 		return CrossStart < Best.CrossStart;
 	};
 
 	// Fallback slot: nothing overlaps, so a nearer track that is a little further
-	// along should beat a far track that is barely closer. Rank by gap plus
-	// cross-axis centre distance, then by gap, then in reading order.
+	// along should beat a far track that is barely closer. Rank by main-axis gap
+	// plus the gap between the cross ranges, then by main-axis gap, then in reading order.
 	auto IsBetterInDirection = [](const float Gap, const float CrossDistance, const float CrossStart, const FBestCandidate& Best) -> bool
 	{
 		if (Best.SnapshotIndex == INDEX_NONE)
@@ -490,9 +496,12 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		}
 
 		const bool bOverlaps = OverlapsSweep(Candidate);
-		const float CrossDistance = FMath::Abs((Candidate.X + 0.5f * Candidate.Width) - CurCrossMid);
+		// Signed overlap of the cross ranges: positive is shared extent, negative is
+		// the gap between them (used as the fallback's cross-axis distance).
+		const float CrossOverlap = FMath::Min(Candidate.X + Candidate.Width, CurCrossEnd) - FMath::Max(Candidate.X, CurCrossStart);
+		const float CrossDistance = FMath::Max(0.0f, -CrossOverlap);
 
-		const bool bBeatsOverlapping = bOverlaps && IsBetterOverlapping(Gap, Candidate.X, BestOverlapping);
+		const bool bBeatsOverlapping = bOverlaps && IsBetterOverlapping(Gap, CrossOverlap, Candidate.X, BestOverlapping);
 		const bool bBeatsInDirection = BestOverlapping.SnapshotIndex == INDEX_NONE
 			&& IsBetterInDirection(Gap, CrossDistance, Candidate.X, BestInDirection);
 		if (!bBeatsOverlapping && !bBeatsInDirection)
@@ -511,6 +520,7 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 		Resolved.SnapshotIndex = Index;
 		Resolved.FocusTarget = CandidateTarget;
 		Resolved.Gap = Gap;
+		Resolved.CrossOverlap = CrossOverlap;
 		Resolved.CrossDistance = CrossDistance;
 		Resolved.CrossStart = Candidate.X;
 
@@ -529,7 +539,7 @@ UObject* FVirtualFlowNavigationPolicy::FindBestFocusTargetInScrollDirection(UObj
 	UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] Result: [%s] -> [%s] (Dir=%d, Gap=%.1f, CrossDistance=%.1f, %s)"),
 		__FUNCTION__, *GetNameSafe(CurrentItem), *GetNameSafe(Best.FocusTarget),
 		static_cast<int32>(Direction), Best.Gap, Best.CrossDistance,
-		BestOverlapping.SnapshotIndex != INDEX_NONE ? TEXT("overlapping") : (Best.SnapshotIndex != INDEX_NONE ? TEXT("nearest fallback") : TEXT("none")));
+		BestOverlapping.SnapshotIndex != INDEX_NONE ? TEXT("overlapping") : (Best.SnapshotIndex != INDEX_NONE ? TEXT("fallback") : TEXT("none")));
 	return Best.FocusTarget;
 }
 
@@ -2230,15 +2240,34 @@ bool SVirtualFlowView::ScrollFocusedEntryOutOfBufferZone()
 		// widget) bypasses every path that reports focus to the owner. This is
 		// the one phase that observes every transition, so report it here, at
 		// the granularity of the item that actually holds focus (a nested item
-		// inside the entry when there is one). Paths that already reported --
-		// TryFocusRealizedItem, HandleItemClicked -- leave LastFocusedItem equal
-		// to that item, so nothing is reported twice.
-		UObject* FocusedLeafItem = ResolveFocusedItemWithinEntry(FocusedItem, UserIndex);
-		if (OwnerWidget->GetLastFocusedItem().Get() != FocusedLeafItem)
+		// inside the entry when there is one).
+		UObject* LastReported = OwnerWidget->GetLastFocusedItem().Get();
+		UObject* ReportItem = ResolveFocusedItemWithinEntry(FocusedItem, UserIndex);
+
+		// On the tick an entry gains focus, a report already made for it by a
+		// path that knew the exact target (TryFocusRealizedItem for a nested
+		// item, HandleItemClicked for the clicked item) stands: it can be more
+		// precise than this phase (nested widgets hosted by a child view are not
+		// registered here) and refining it would report the same press twice.
+		const bool bLastReportedIsWithinEntry = IsValid(LastReported)
+			&& (LastReported == FocusedItem || NavigationPolicy.ResolveOwningDisplayedItem(LastReported) == FocusedItem);
+		if (bEntryChanged && bLastReportedIsWithinEntry)
 		{
-			OwnerWidget->NotifyItemFocusChanged(FocusedLeafItem, OwnerWidget->GetFirstWidgetForItem(FocusedLeafItem));
+			ReportItem = LastReported;
 		}
-		OwnerWidget->ApplySelectOnFocus(FocusedLeafItem);
+
+		const bool bReportChanged = ReportItem != LastReported;
+		if (bReportChanged)
+		{
+			OwnerWidget->NotifyItemFocusChanged(ReportItem, OwnerWidget->GetFirstWidgetForItem(ReportItem));
+		}
+		// Select-on-focus follows the reported item: on every entry transition (as
+		// before) and whenever the reported item changes inside an entry. Focus
+		// moving between plain widgets of one entry re-selects nothing.
+		if (bEntryChanged || bReportChanged)
+		{
+			OwnerWidget->ApplySelectOnFocus(ReportItem);
+		}
 	}
 
 	if (!InteractionState.bPendingBufferCheck || !IsValid(FocusedItem))
@@ -4346,9 +4375,12 @@ FNavigationReply SVirtualFlowView::OnNavigation(const FGeometry& MyGeometry, con
 	}
 
 	// --- Layout-space spatial target ---
-	// The same rule the hittest grid applies to painted widgets, evaluated over
-	// every placed entry so the bridged destination matches where Slate would
-	// have landed had the entry been painted.
+	// The hittest grid's candidate rule (in the pressed direction, overlapping
+	// the cross-axis sweep, nearest leading edge) evaluated over every placed
+	// entry, painted or not, so bridging normally targets the entry Slate would
+	// pick among painted ones. Ties and the no-overlap fallback are the policy's
+	// own rules (see FVirtualFlowNavigationPolicy). This target feeds the
+	// simulation reply, the snap path below and the CustomBoundary delegate.
 	UObject* TargetItem = NavigationPolicy.FindBestFocusTargetInScrollDirection(CurrentItem, NavDir);
 	if (!IsValid(TargetItem))
 	{

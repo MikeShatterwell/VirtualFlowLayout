@@ -781,7 +781,9 @@ private:
 	 * faster than the scroll animation can follow, which otherwise causes focus
 	 * to target unrealized entries and get lost. A press that arrives after the
 	 * delay lands the in-flight scroll immediately and continues. While no scroll
-	 * is in flight, navigation between painted entries is not paced.
+	 * is in flight, navigation between painted entries is not paced. A focus
+	 * request made by game code (FocusItem, FocusSection, view focus handoff) is
+	 * left to land first: presses during it are held regardless of this delay.
 	 * Set to 0 to disable rate limiting (each press lands the in-flight scroll immediately).
 	 */
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus", meta = (ClampMin = 0.0, ClampMax = 1.0, UIMin = 0.0, UIMax = 0.5))
