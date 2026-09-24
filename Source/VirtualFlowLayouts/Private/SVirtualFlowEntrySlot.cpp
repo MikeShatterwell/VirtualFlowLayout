@@ -51,11 +51,13 @@ TSharedPtr<SWidget> SVirtualFlowEntrySlot::FindFocusableWidgetUnderPointer(const
 		return nullptr;
 	}
 
+	const TSharedRef<const SWidget> Self = AsShared();
 	for (int32 Index = EventPath->Widgets.Num() - 1; Index >= 0; --Index)
 	{
 		const TSharedRef<SWidget>& Widget = EventPath->Widgets[Index].Widget;
-		if (&Widget.Get() == static_cast<const SWidget*>(this))
+		if (Widget == Self)
 		{
+			// Reached this slot: anything above it (the view itself) is outside the entry.
 			break;
 		}
 		if (Widget->SupportsKeyboardFocus())
