@@ -422,7 +422,6 @@ public:
 	float GetLineSpacing() const { return LineSpacing; }
 	EVirtualFlowOrientation GetOrientation() const { return Orientation; }
 	const TWeakObjectPtr<UObject>& GetLastFocusedItem() const { return LastFocusedItem; }
-	/** Incremented on every focus report, so the view can tell a fresh report from a retained one. */
 	uint32 GetFocusReportSerial() const { return FocusReportSerial; }
 	bool GetEnableViewportProximityFeedback() const { return bEnableViewportProximityFeedback; }
 	UCurveFloat* GetViewportProximityCurve() const { return ViewportProximityCurve; }

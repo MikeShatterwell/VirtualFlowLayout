@@ -1312,7 +1312,7 @@ void UVirtualFlowView::GetDefaultItemChildrenForItem_Implementation(UObject* InI
 FReply UVirtualFlowView::HandleItemClicked(UUserWidget* ItemWidget, UObject* Item, const bool bDoubleClick, TSharedPtr<SWidget> FocusableUnderPointer)
 {
 	// Click routing from SVirtualFlowEntrySlot:
-	//   1. Focus the entry the way Slate's click handling would (SVirtualFlowView::FocusClickedEntry).
+	//   1. Focus the clicked entry (SVirtualFlowView::FocusClickedEntry).
 	//   2. Update focus tracking (does not apply select-on-focus, click uses bSelectOnClick).
 	//   3. On single click: toggle expansion if the item's layout requests it.
 	//   4. Apply click-based selection according to SelectionMode and toggle policy.
@@ -1328,7 +1328,7 @@ FReply UVirtualFlowView::HandleItemClicked(UUserWidget* ItemWidget, UObject* Ite
 	}
 	else if (IsValid(Item))
 	{
-		// Re-click: reaffirm the report (no broadcast) so the view treats it as fresh.
+		// Re-click: refresh the report without broadcasting.
 		++FocusReportSerial;
 	}
 
@@ -1363,7 +1363,6 @@ FReply UVirtualFlowView::HandleItemClicked(UUserWidget* ItemWidget, UObject* Ite
 		OnItemClicked.Broadcast(Item, ItemWidget);
 	}
 
-	// Naming the focused widget tells Slate focus is settled, so its click fallback leaves it alone.
 	return FocusedWidget.IsValid()
 		? FReply::Handled().SetUserFocus(FocusedWidget.ToSharedRef(), EFocusCause::Mouse)
 		: FReply::Handled();

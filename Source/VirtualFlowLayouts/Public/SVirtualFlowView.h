@@ -159,7 +159,6 @@ struct FDeferredViewAction
 	int32 FocusAttempts = 0;
 	static constexpr int32 MaxFocusAttempts = 8;
 
-	/** True when directional navigation queued this action (a bridged scroll), which the repeat delay paces. */
 	bool bNavigationInitiated = false;
 
 	bool IsValid() const
@@ -207,10 +206,8 @@ struct FVirtualFlowInteractionState
 	/** The item whose entry widget held keyboard focus last tick. Used to detect focus transitions. */
 	TWeakObjectPtr<UObject> LastTickFocusedItem;
 
-	/** The Slate widget that held keyboard focus last tick, to detect focus moving inside one entry. */
 	TWeakPtr<SWidget> LastTickFocusedSlateWidget;
 
-	/** The owner's focus report serial as of the last focus-transition check; a newer serial means a fresh report. */
 	uint32 LastSeenFocusReportSerial = 0;
 
 	/**
@@ -457,13 +454,7 @@ public:
 	/** Finds a sibling item for cross-axis nested navigation (Left/Right when vertical, Up/Down when horizontal). No display-order fallback. */
 	UObject* FindSiblingForCrossAxisNavigation(UObject* CurrentItem, EUINavigation Direction) const;
 
-	/**
-	 * Finds the navigation target along the scroll direction with Slate's hittest-grid rule,
-	 * applied to layout-space rects so unpainted entries count: the candidate must lie past
-	 * the current entry and overlap it across the scroll axis, and the nearest leading edge
-	 * wins. When nothing overlaps, the nearest entry in that direction wins. No display-order
-	 * fallback: returns nullptr when nothing lies in that direction.
-	 */
+	/** Finds the best navigation target along the scroll direction using Slate's hittest-grid rule on layout rects. No display-order fallback. */
 	UObject* FindBestFocusTargetInScrollDirection(UObject* CurrentItem, EUINavigation Direction) const;
 
 private:
@@ -475,13 +466,9 @@ private:
 	FOrientedAxes Axes;
 
 	// --- Scoring constants (layout-space: Y = main/scroll axis, X = cross axis) ---
-	/** Slate's hittest-grid compare tolerance: how far before the current trailing edge a candidate may start; leading edges this close tie. */
 	static constexpr float DirectionTolerance = 0.1f;
-	/** Slate's hittest-grid sweep inset, so edge-adjacent tracks do not count as overlapping. */
 	static constexpr float CrossAxisSweepInset = 0.5f;
-	/** Coverage keys closer than this tie and resolve in reading order. */
 	static constexpr float CrossCoverageTieTolerance = 0.01f;
-	/** Fallback distances closer than this tie; also the slack of the scan's early exit. */
 	static constexpr float MainAxisTieTolerance = 1.0f;
 };
 
@@ -873,31 +860,17 @@ private:
 	 */
 	TSharedPtr<SWidget> FindFocusableSlateWidgetForItem(UObject* InItem) const;
 
-	/**
-	 * Gives a clicked entry the focus Slate's own click handling would: the focusable
-	 * widget under the pointer, else focus Slate already placed inside the entry, else the
-	 * entry's focusable target -- never a widget that cannot take focus, which would pass
-	 * focus up to this view. Cancels any in-flight deferred action. Returns the focused widget.
-	 */
 	TSharedPtr<SWidget> FocusClickedEntry(UObject* Item, UUserWidget* EntryWidget, const TSharedPtr<SWidget>& FocusableUnderPointer);
 
-	/**
-	 * CustomBoundary delegate for scroll-axis navigation: runs only when no painted
-	 * focusable widget lies in NavDir inside the view. Focuses TargetItem if it is visible,
-	 * otherwise scrolls it into view and focuses it once realized.
-	 */
 	TSharedPtr<SWidget> HandleNavigationBeyondPaintedEntries(EUINavigation NavDir, TWeakObjectPtr<UObject> TargetItem);
 
-	/** True while a deferred FocusItem action has not landed focus yet. */
 	bool IsDeferredFocusLanding() const;
 
-	/** The nested item whose registered widget holds focus inside a realized entry, else the entry itself. */
 	UObject* ResolveFocusedItemWithinEntry(UObject* DisplayedItem, uint32 UserIndex) const;
 
-	/** Whether the widgets an item registered with the owner hold keyboard focus. */
 	enum class ERegisteredWidgetFocus : uint8
 	{
-		NoWidgetRegistered, // e.g. hosted by a child view, so nothing can be told
+		NoWidgetRegistered,
 		NotFocused,
 		Focused,
 	};

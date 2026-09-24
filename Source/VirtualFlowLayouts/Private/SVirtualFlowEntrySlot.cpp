@@ -42,9 +42,6 @@ FReply SVirtualFlowEntrySlot::OnMouseButtonDoubleClick(const FGeometry& MyGeomet
 
 TSharedPtr<SWidget> SVirtualFlowEntrySlot::FindFocusableWidgetUnderPointer(const FPointerEvent& MouseEvent) const
 {
-	// Slate routes the click along the widgets under the pointer; walking that path
-	// from the leaf back to this slot finds the widget Slate's own click handling
-	// would give focus to.
 	const FWidgetPath* EventPath = MouseEvent.GetEventPath();
 	if (EventPath == nullptr || !EventPath->IsValid())
 	{
@@ -57,7 +54,6 @@ TSharedPtr<SWidget> SVirtualFlowEntrySlot::FindFocusableWidgetUnderPointer(const
 		const TSharedRef<SWidget>& Widget = EventPath->Widgets[Index].Widget;
 		if (Widget == Self)
 		{
-			// Reached this slot: anything above it (the view itself) is outside the entry.
 			break;
 		}
 		if (Widget->SupportsKeyboardFocus())
