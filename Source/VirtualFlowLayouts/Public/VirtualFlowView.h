@@ -422,7 +422,7 @@ public:
 	float GetLineSpacing() const { return LineSpacing; }
 	EVirtualFlowOrientation GetOrientation() const { return Orientation; }
 	const TWeakObjectPtr<UObject>& GetLastFocusedItem() const { return LastFocusedItem; }
-	/** Incremented on every NotifyItemFocusChanged; lets the view tell a fresh focus report from a retained one. */
+	/** Incremented on every focus report, so the view can tell a fresh report from a retained one. */
 	uint32 GetFocusReportSerial() const { return FocusReportSerial; }
 	bool GetEnableViewportProximityFeedback() const { return bEnableViewportProximityFeedback; }
 	UCurveFloat* GetViewportProximityCurve() const { return ViewportProximityCurve; }
@@ -466,11 +466,7 @@ public:
 
 	// --- Interaction handlers (called by SVirtualFlowEntrySlot) ---
 
-	/**
-	 * Routes a click or double-click from an entry slot, handling focus, expansion, selection, and events.
-	 * FocusableUnderPointer is the focusable widget Slate would focus for the click (null when unknown,
-	 * e.g. from UVirtualFlowEntryWidgetExtension::NotifyClicked).
-	 */
+	/** Routes a click or double-click from an entry slot, handling focus, expansion, selection, and events. */
 	FReply HandleItemClicked(UUserWidget* ItemWidget, UObject* Item, bool bDoubleClick, TSharedPtr<SWidget> FocusableUnderPointer = nullptr);
 	/** Routes hover enter/leave from an entry slot. */
 	void HandleItemHovered(UUserWidget* ItemWidget, UObject* Item, bool bHovered);
@@ -751,46 +747,23 @@ private:
 	 *
 	 * For short entries the far edge reaches the buffer boundary first and stops;
 	 * for entries larger than the safe area the near edge wins instead. Set to 0
-	 * for no extra margin: a focused entry is still scrolled just far enough to
-	 * be fully visible.
+	 * to restore the default "just barely visible" Nearest behaviour.
 	 */
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus", meta = (ClampMin = 0.0))
 	float NavigationScrollBuffer = 64.0f;
 
-	/**
-	 * Bridges Up/Down navigation across virtualized entries when the view scrolls
-	 * vertically. Slate's own spatial navigation still moves focus between the
-	 * painted entries (pressing Up lands on the entry spatially above the focused
-	 * widget); only when the entry in the pressed direction is not painted does the
-	 * view scroll it into view and focus it once it is realized. When disabled,
-	 * focus stops at (or leaves the view from) the last painted entry.
-	 * Ignored when Orientation is Horizontal.
-	 */
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus")
 	bool bBridgeVirtualizedVerticalNavigation = true;
 
-	/**
-	 * Bridges Left/Right navigation across virtualized entries when the view scrolls
-	 * horizontally. See bBridgeVirtualizedVerticalNavigation.
-	 * Ignored when Orientation is Vertical.
-	 */
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus")
 	bool bBridgeVirtualizedHorizontalNavigation = true;
 
 	/**
-	 * Minimum time (seconds) between successive scroll-axis navigation presses
-	 * while the view is still scrolling toward a target or a deferred focus
-	 * action is pending, however that scroll started (a bridged reveal, the
-	 * NavigationScrollBuffer adjustment that follows a hop between painted
-	 * entries, a smooth wheel scroll). When holding a direction key, Slate fires
-	 * OnNavigation on every key repeat; this delay keeps focus from advancing
-	 * faster than the scroll animation can follow, which otherwise causes focus
-	 * to target unrealized entries and get lost. A press that arrives after the
-	 * delay lands the in-flight scroll immediately and continues. While no scroll
-	 * is in flight, navigation between painted entries is not paced. A focus
-	 * request made by game code (FocusItem, FocusSection, view focus handoff) is
-	 * left to land first: presses during it are held regardless of this delay.
-	 * Set to 0 to disable rate limiting (each press lands the in-flight scroll immediately).
+	 * Minimum time (seconds) between successive navigation actions that trigger scrolling.
+	 * When holding a direction key, Slate fires OnNavigation on every key repeat.
+	 * This delay prevents focus from advancing faster than the scroll animation can
+	 * follow, which otherwise causes focus to target unrealized entries and get lost.
+	 * Set to 0 to disable rate limiting.
 	 */
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Focus", meta = (ClampMin = 0.0, ClampMax = 1.0, UIMin = 0.0, UIMax = 0.5))
 	float NavigationRepeatDelay = 0.12f;

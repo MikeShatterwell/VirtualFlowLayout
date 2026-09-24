@@ -159,13 +159,7 @@ struct FDeferredViewAction
 	int32 FocusAttempts = 0;
 	static constexpr int32 MaxFocusAttempts = 8;
 
-	/**
-	 * True when directional navigation queued this action (a bridged scroll).
-	 * Scroll-axis presses pace and may snap such actions through
-	 * NavigationRepeatDelay; while a focus request made by game code has not
-	 * landed, scroll-axis presses are held instead. Cross-axis presses are held
-	 * while any FocusItem action has not landed, whoever queued it.
-	 */
+	/** True when directional navigation queued this action (a bridged scroll), which the repeat delay paces. */
 	bool bNavigationInitiated = false;
 
 	bool IsValid() const
@@ -213,19 +207,10 @@ struct FVirtualFlowInteractionState
 	/** The item whose entry widget held keyboard focus last tick. Used to detect focus transitions. */
 	TWeakObjectPtr<UObject> LastTickFocusedItem;
 
-	/**
-	 * The Slate widget that held keyboard focus last tick. Detects focus moving
-	 * inside one entry (between nested items or focusable children) so the owner
-	 * is told about the item that actually holds focus.
-	 */
+	/** The Slate widget that held keyboard focus last tick, to detect focus moving inside one entry. */
 	TWeakPtr<SWidget> LastTickFocusedSlateWidget;
 
-	/**
-	 * The owner's focus report serial as seen at the end of the previous
-	 * ScrollFocusedEntryOutOfBufferZone run. A different current serial means
-	 * another path (TryFocusRealizedItem, HandleItemClicked, OnFocusReceived)
-	 * reported focus since then, so that report is fresh rather than retained.
-	 */
+	/** The owner's focus report serial as of the last focus-transition check; a newer serial means a fresh report. */
 	uint32 LastSeenFocusReportSerial = 0;
 
 	/**
@@ -242,11 +227,7 @@ struct FVirtualFlowInteractionState
 	bool bPendingBufferCheck = false;
 
 	// --- Navigation rate limiting ---
-	/**
-	 * Time of the last scroll-axis navigation press OnNavigation accepted, whether
-	 * it handed the press to Slate (CustomBoundary) or resolved it itself (snap /
-	 * bridge). Compared against NavigationRepeatDelay while a scroll is in flight.
-	 */
+	/** Timestamp of the last navigation action that initiated a scroll or focus command. */
 	double LastNavActionTime = 0.0;
 
 	// --- Focus restoration after expansion ---
@@ -328,6 +309,13 @@ struct FOrientedAxes
 		return bHorizontal
 			? (Dir == EUINavigation::Left || Dir == EUINavigation::Right)
 			: (Dir == EUINavigation::Up || Dir == EUINavigation::Down);
+	}
+	/** True when the navigation direction is perpendicular to the scroll axis. */
+	FORCEINLINE bool IsCrossAxisNav(EUINavigation Dir) const
+	{
+		return bHorizontal
+			? (Dir == EUINavigation::Up || Dir == EUINavigation::Down)
+			: (Dir == EUINavigation::Left || Dir == EUINavigation::Right);
 	}
 	/** True when the navigation direction points forward along the main axis (Down for vertical, Right for horizontal). */
 	FORCEINLINE bool IsForwardOnMainAxis(EUINavigation Dir) const
@@ -441,19 +429,6 @@ struct FRealizedPlacedItem
  * Encapsulates the spatial and logical navigation policy for a VirtualFlowView.
  * Given a display model, layout snapshot, and the owning UVirtualFlowView, resolves
  * directional navigation targets without depending on the scrolling/realization internals.
- *
- * Scroll-axis targets are resolved with the same candidate rule Slate's hittest grid
- * applies to painted widgets (see FHittestGrid::FindNextFocusableWidget): in the pressed
- * direction, overlapping across the scroll axis, nearest leading edge. It is evaluated on
- * the layout snapshot so entries that are not realized or not painted still count, which
- * normally makes the bridged (scroll-then-focus) destination the entry Slate's own spatial
- * navigation would pick among painted ones. It is not guaranteed to: leading edges within
- * Slate's 0.1 compare window count as tied and resolve by cross-axis coverage of the
- * current entry (entries lying inside it all tie and keep reading order, an entry
- * extending past it wins only when it clearly covers more than half of it), then reading order
- * (smallest cross-axis start), whereas Slate breaks such ties by hittest-cell visiting
- * order; and Slate sweeps from the focused widget's own rect while this policy uses the
- * entry's layout slot.
  */
 class FVirtualFlowNavigationPolicy
 {
@@ -467,6 +442,9 @@ public:
 		UVirtualFlowView* InOwnerWidget,
 		const FOrientedAxes& InAxes);
 
+	/** Resolves the next selectable item using the spatial/navigation policy as keyboard navigation. */
+	UObject* FindAdjacentItem(UObject* CurrentItem, EUINavigation Direction) const;
+
 	/** Finds the preferred focusable item within the subtree of a displayed item, preferring selectable items. */
 	UObject* FindPreferredFocusTargetForDisplayedItem(const UObject* DisplayedItem, UObject* ReferenceItem) const;
 
@@ -476,29 +454,15 @@ public:
 	/** Asks the owning entry widget to reveal a nested focus target. */
 	bool RequestRevealForNestedItem(UObject* InItem, EUINavigation Direction) const;
 
+	/** Finds a sibling item for cross-axis nested navigation (Left/Right when vertical, Up/Down when horizontal). No display-order fallback. */
+	UObject* FindSiblingForCrossAxisNavigation(UObject* CurrentItem, EUINavigation Direction) const;
+
 	/**
-	 * Finds the navigation target along the scroll axis (Up/Down when vertical, Left/Right
-	 * when horizontal) using the hittest-grid rule on layout-space rects:
-	 *
-	 *   1. Candidates must lie in the pressed direction: their leading edge sits at or past
-	 *      the current entry's trailing edge (flush rows qualify; a 2x2 block beside a 1x1
-	 *      entry is neither above nor below it).
-	 *   2. Among candidates that overlap the current entry across the scroll axis, the one
-	 *      whose leading edge is nearest wins. Leading edges within DirectionTolerance
-	 *      count as tied (several entries under a wider one, or a narrow entry straddling
-	 *      two tracks) and resolve by cross-axis coverage of the current entry: entries
-	 *      lying inside it all tie and keep reading order, an entry extending past it
-	 *      wins only when it clearly covers more than half of it (a straddled entry prefers
-	 *      the track it mostly covers), then reading order, i.e. the smallest cross-axis start.
-	 *   3. When nothing overlaps (a shorter final row, staggered masonry columns), the
-	 *      candidate with the smallest combined main-axis gap plus cross-axis gap (the
-	 *      distance between the two cross ranges) wins instead, so focus does not leave the
-	 *      view while entries remain beyond, and does not jump across several tracks when a
-	 *      nearer track is only slightly further along.
-	 *
-	 * Candidates without a focusable target are skipped. Returns nullptr when no focusable
-	 * entry lies in that direction at all, i.e. focus may leave the view. Returns the first
-	 * or last focusable item when CurrentItem is null.
+	 * Finds the navigation target along the scroll direction with Slate's hittest-grid rule,
+	 * applied to layout-space rects so unpainted entries count: the candidate must lie past
+	 * the current entry and overlap it across the scroll axis, and the nearest leading edge
+	 * wins. When nothing overlaps, the nearest entry in that direction wins. No display-order
+	 * fallback: returns nullptr when nothing lies in that direction.
 	 */
 	UObject* FindBestFocusTargetInScrollDirection(UObject* CurrentItem, EUINavigation Direction) const;
 
@@ -510,23 +474,14 @@ private:
 	TWeakObjectPtr<UVirtualFlowView> OwnerWidget = nullptr;
 	FOrientedAxes Axes;
 
-	// --- Spatial rule constants (layout-space: Y = main/scroll axis, X = cross axis).
-	//     DirectionTolerance and CrossAxisSweepInset mirror FHittestGrid::FindNextFocusableWidget
-	//     so painted and bridged navigation accept the same candidates; the tie tolerance
-	//     and tie-breaks are this policy's own deterministic choice. ---
-
-	/**
-	 * A candidate counts as lying in the navigation direction unless its leading edge sits
-	 * at least this far BEFORE the current trailing edge (Slate's +/-0.1 compare). Flush
-	 * edges, the zero-spacing default, qualify; entries beside the current one do not.
-	 * Also the window within which overlapping candidates' leading edges count as tied.
-	 */
+	// --- Scoring constants (layout-space: Y = main/scroll axis, X = cross axis) ---
+	/** Slate's hittest-grid compare tolerance: how far before the current trailing edge a candidate may start; leading edges this close tie. */
 	static constexpr float DirectionTolerance = 0.1f;
-	/** The cross-axis sweep is the current entry inset by this on both sides, so edge-adjacent tracks never count as overlapping. */
+	/** Slate's hittest-grid sweep inset, so edge-adjacent tracks do not count as overlapping. */
 	static constexpr float CrossAxisSweepInset = 0.5f;
-	/** Cross-axis coverage keys (0..1) closer together than this are tied and resolved by reading order. */
+	/** Coverage keys closer than this tie and resolve in reading order. */
 	static constexpr float CrossCoverageTieTolerance = 0.01f;
-	/** Fallback distances closer together than this are tied and resolved by the next criterion; also bounds the scan's early exit. */
+	/** Fallback distances closer than this tie; also the slack of the scan's early exit. */
 	static constexpr float MainAxisTieTolerance = 1.0f;
 };
 
@@ -909,85 +864,41 @@ private:
 	 */
 	float ComputeAimedScrollOffset(int32 SnapshotIndex, EVirtualFlowScrollDestination Destination) const;
 
-	/**
-	 * Moves keyboard focus to a realized item's preferred focusable widget (nested
-	 * items included) and reports the change to the owner once focus has moved.
-	 * FocusCause is the cause Slate hands to the resulting focus events.
-	 */
-	bool TryFocusRealizedItem(UObject* InItem, EFocusCause FocusCause = EFocusCause::SetDirectly) const;
+	bool TryFocusRealizedItem(UObject* InItem) const;
 
 	/**
-	 * Resolves the preferred focusable Slate widget for a realized item: the entry's
-	 * IVirtualFlowEntryWidgetInterface preferred focus target when it can take keyboard
-	 * focus, otherwise the first keyboard-focusable descendant of the realized slot.
-	 * Pure query: it moves no focus and reports nothing to the owner.
+	 * Resolves the preferred focusable Slate widget for a realized item.
+	 * Used by OnNavigation to build Explicit replies without side effects.
 	 * Returns nullptr if the item is not realized or has no focusable descendant.
 	 */
 	TSharedPtr<SWidget> FindFocusableSlateWidgetForItem(UObject* InItem) const;
 
 	/**
-	 * Applies Slate's click-focus rule to a clicked entry and returns the widget
-	 * that holds focus afterwards (null when the entry has nothing focusable):
-	 *   1. the focusable widget under the pointer, as Slate would pick it;
-	 *   2. otherwise focus Slate already placed inside the entry (a button that
-	 *      took focus on mouse down, a re-click) stays where it is;
-	 *   3. otherwise the entry stands in for the focusable ancestor Slate would
-	 *      fall back to: its preferred focus target when that can take keyboard
-	 *      focus, else its first keyboard-focusable descendant. Focus is never
-	 *      handed to a widget that cannot take it, which would pass it up to this
-	 *      view and let the view-focus policy move it to a different entry.
-	 * Also cancels any in-flight deferred scroll/focus action: the click is user
-	 * input taking over, and the action would otherwise land later and pull focus
-	 * off the clicked entry.
+	 * Gives a clicked entry the focus Slate's own click handling would: the focusable
+	 * widget under the pointer, else focus Slate already placed inside the entry, else the
+	 * entry's focusable target -- never a widget that cannot take focus, which would pass
+	 * focus up to this view. Cancels any in-flight deferred action. Returns the focused widget.
 	 */
-	TSharedPtr<SWidget> FocusClickedEntry(UUserWidget* EntryWidget, const TSharedPtr<SWidget>& FocusableUnderPointer);
+	TSharedPtr<SWidget> FocusClickedEntry(UObject* Item, UUserWidget* EntryWidget, const TSharedPtr<SWidget>& FocusableUnderPointer);
 
 	/**
-	 * Scroll destination used when navigation must reveal an entry: the snap
-	 * destination while scroll snapping is enabled, otherwise Nearest.
-	 */
-	EVirtualFlowScrollDestination GetNavigationRevealDestination() const;
-
-	/**
-	 * FNavigationReply::CustomBoundary delegate returned by OnNavigation for
-	 * scroll-axis navigation. Slate runs its hittest-grid spatial navigation
-	 * across this view's painted entries first and only calls this when no
-	 * painted focusable widget lies in NavDir inside the view. TargetItem is the
-	 * layout-space neighbour resolved by the navigation policy: when it is
-	 * realized and visible the view focuses it right away (TryFocusRealizedItem,
-	 * which also reports the change to the owner), otherwise the view scrolls it
-	 * into view and a deferred FocusItem action lands focus once it is realized
-	 * (bridged navigation). Always returns nullptr: focus is moved by the view,
-	 * never by Slate's follow-up SetUserFocus.
+	 * CustomBoundary delegate for scroll-axis navigation: runs only when no painted
+	 * focusable widget lies in NavDir inside the view. Focuses TargetItem if it is visible,
+	 * otherwise scrolls it into view and focuses it once realized.
 	 */
 	TSharedPtr<SWidget> HandleNavigationBeyondPaintedEntries(EUINavigation NavDir, TWeakObjectPtr<UObject> TargetItem);
 
-	/**
-	 * True while a deferred FocusItem action has been queued but has not landed
-	 * focus yet (Type == FocusItem, !bFocusApplied). OnNavigation holds every
-	 * cross-axis press in that state, whoever queued the action: a Slate-driven
-	 * sideways move would be pulled back when the action lands. Scroll-axis
-	 * presses are held only when the action was not queued by navigation
-	 * (FocusItem / FocusSection / view focus handoff); navigation-initiated
-	 * bridges are paced by NavigationRepeatDelay instead.
-	 */
+	/** True while a deferred FocusItem action has not landed focus yet. */
 	bool IsDeferredFocusLanding() const;
 
-	/**
-	 * Resolves the item that actually holds keyboard focus inside a realized
-	 * entry: the deepest nested item (EVirtualFlowChildrenPresentation::NestedInEntry)
-	 * whose registered widget holds or contains the focused widget, otherwise the
-	 * displayed item itself.
-	 */
+	/** The nested item whose registered widget holds focus inside a realized entry, else the entry itself. */
 	UObject* ResolveFocusedItemWithinEntry(UObject* DisplayedItem, uint32 UserIndex) const;
 
-	/** Whether the widgets an item has registered with the owner hold keyboard focus. */
+	/** Whether the widgets an item registered with the owner hold keyboard focus. */
 	enum class ERegisteredWidgetFocus : uint8
 	{
-		/** The owner knows no widget for the item (e.g. it is hosted by a child view), so nothing can be told. */
-		NoWidgetRegistered,
+		NoWidgetRegistered, // e.g. hosted by a child view, so nothing can be told
 		NotFocused,
-		/** A registered widget holds focus or contains the focused widget. */
 		Focused,
 	};
 	ERegisteredWidgetFocus GetRegisteredWidgetFocus(UObject* InItem, uint32 UserIndex) const;

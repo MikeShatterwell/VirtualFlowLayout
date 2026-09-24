@@ -1312,16 +1312,14 @@ void UVirtualFlowView::GetDefaultItemChildrenForItem_Implementation(UObject* InI
 FReply UVirtualFlowView::HandleItemClicked(UUserWidget* ItemWidget, UObject* Item, const bool bDoubleClick, TSharedPtr<SWidget> FocusableUnderPointer)
 {
 	// Click routing from SVirtualFlowEntrySlot:
-	//   1. Focus follows Slate's click rule (see SVirtualFlowView::FocusClickedEntry): the
-	//      focusable widget under the pointer, focus Slate already placed in the entry, or
-	//      the entry's own focusable target -- so the next navigation starts from here.
+	//   1. Focus the entry the way Slate's click handling would (SVirtualFlowView::FocusClickedEntry).
 	//   2. Update focus tracking (does not apply select-on-focus, click uses bSelectOnClick).
 	//   3. On single click: toggle expansion if the item's layout requests it.
 	//   4. Apply click-based selection according to SelectionMode and toggle policy.
 	//   5. Broadcast OnItemClicked or OnItemDoubleClicked.
 
 	const TSharedPtr<SWidget> FocusedWidget = MyFlowView.IsValid()
-		? MyFlowView->FocusClickedEntry(ItemWidget, FocusableUnderPointer)
+		? MyFlowView->FocusClickedEntry(Item, ItemWidget, FocusableUnderPointer)
 		: nullptr;
 
 	if (LastFocusedItem != Item)
@@ -1330,10 +1328,7 @@ FReply UVirtualFlowView::HandleItemClicked(UUserWidget* ItemWidget, UObject* Ite
 	}
 	else if (IsValid(Item))
 	{
-		// Re-click of the already reported item: reaffirm the report (no
-		// re-broadcast) so the view's focus-observation phase treats it as fresh
-		// and keeps the clicked entry instead of refining it to the nested item
-		// the preferred focus target may live in.
+		// Re-click: reaffirm the report (no broadcast) so the view treats it as fresh.
 		++FocusReportSerial;
 	}
 
@@ -1368,8 +1363,7 @@ FReply UVirtualFlowView::HandleItemClicked(UUserWidget* ItemWidget, UObject* Ite
 		OnItemClicked.Broadcast(Item, ItemWidget);
 	}
 
-	// Naming the focused widget in the reply tells Slate focus is settled, so its
-	// own click fallback does not re-resolve it (possibly up to this view).
+	// Naming the focused widget tells Slate focus is settled, so its click fallback leaves it alone.
 	return FocusedWidget.IsValid()
 		? FReply::Handled().SetUserFocus(FocusedWidget.ToSharedRef(), EFocusCause::Mouse)
 		: FReply::Handled();

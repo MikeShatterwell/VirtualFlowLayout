@@ -60,13 +60,8 @@ protected:
 	/**
 	 * Optional preferred focus target within the widget hierarchy.
 	 * Return nullptr to use the root entry widget itself.
-	 *
-	 * The view honours this target whenever it moves focus itself (clicks,
-	 * FocusItem, bridged navigation). Slate's own spatial navigation between
-	 * painted entries lands on whichever focusable widget it finds first, so an
-	 * entry whose root widget is focusable and that returns an inner target should
-	 * forward focus from the root to that target in OnFocusReceived (reply with
-	 * SetUserFocus on the target).
+	 * Slate's own navigation and clicks focus whatever focusable widget they reach, so a
+	 * focusable root that prefers an inner target should forward focus in OnFocusReceived.
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Virtual Flow")
 	UWidget* GetVirtualFlowPreferredFocusTarget() const;

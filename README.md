@@ -13,7 +13,7 @@
 *   **Heterogeneous Widgets:** Supports widgets of different classes and different layout requirements within the same list.
 *   **Extensible Layout Engines:** Swap layout strategies (List, Tile, Masonry, Block Grid) by swapping `UVirtualFlowLayoutEngine` instances.
 *   **Designer Preview:** Built-in preview generator allowing you to visualize and iterate on layouts directly within the UMG Designer.
-*   **Navigation:** Native support for gamepad/keyboard spatial navigation and focus management. Slate's spatial navigation moves focus between the painted entries; when the entry in the pressed direction along the scroll axis is virtualized, the view scrolls it into view and focuses it once realized (bridged navigation).
+*   **Navigation:** Native support for gamepad/keyboard spatial navigation and focus management.
 *   **Debugger:** Built-in design-time debug drawing along with [InputFlowDebugger](https://github.com/MikeShatterwell/InputFlowDebugger) integration (if enabled in project) for more runtime debug options.
 
 ---
