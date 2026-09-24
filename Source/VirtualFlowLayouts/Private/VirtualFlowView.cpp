@@ -1309,27 +1309,20 @@ void UVirtualFlowView::GetDefaultItemChildrenForItem_Implementation(UObject* InI
 	OutChildren.Reset();
 }
 
-FReply UVirtualFlowView::HandleItemClicked(UUserWidget* ItemWidget, UObject* Item, const bool bDoubleClick)
+FReply UVirtualFlowView::HandleItemClicked(UUserWidget* ItemWidget, UObject* Item, const bool bDoubleClick, TSharedPtr<SWidget> FocusableUnderPointer)
 {
 	// Click routing from SVirtualFlowEntrySlot:
-	//   1. Set keyboard focus to the entry widget's preferred focus target.
+	//   1. Focus follows Slate's click rule (see SVirtualFlowView::FocusClickedEntry): the
+	//      focusable widget under the pointer, focus Slate already placed in the entry, or
+	//      the entry's own focusable target -- so the next navigation starts from here.
 	//   2. Update focus tracking (does not apply select-on-focus, click uses bSelectOnClick).
 	//   3. On single click: toggle expansion if the item's layout requests it.
 	//   4. Apply click-based selection according to SelectionMode and toggle policy.
 	//   5. Broadcast OnItemClicked or OnItemDoubleClicked.
 
-	if (IsValid(ItemWidget))
-	{
-		// GetPreferredFocusTargetForEntryWidget falls back to ItemWidget itself, so FocusWidget
-		// is always valid when ItemWidget is valid.
-		if (const UWidget* FocusWidget = GetPreferredFocusTargetForEntryWidget(ItemWidget); IsValid(FocusWidget))
-		{
-			if (FocusWidget->GetCachedWidget().IsValid())
-			{
-				FSlateApplication::Get().SetKeyboardFocus(FocusWidget->GetCachedWidget(), EFocusCause::Mouse);
-			}
-		}
-	}
+	const TSharedPtr<SWidget> FocusedWidget = MyFlowView.IsValid()
+		? MyFlowView->FocusClickedEntry(ItemWidget, FocusableUnderPointer)
+		: nullptr;
 
 	if (LastFocusedItem != Item)
 	{
@@ -1375,7 +1368,11 @@ FReply UVirtualFlowView::HandleItemClicked(UUserWidget* ItemWidget, UObject* Ite
 		OnItemClicked.Broadcast(Item, ItemWidget);
 	}
 
-	return FReply::Handled();
+	// Naming the focused widget in the reply tells Slate focus is settled, so its
+	// own click fallback does not re-resolve it (possibly up to this view).
+	return FocusedWidget.IsValid()
+		? FReply::Handled().SetUserFocus(FocusedWidget.ToSharedRef(), EFocusCause::Mouse)
+		: FReply::Handled();
 }
 
 void UVirtualFlowView::HandleItemHovered(UUserWidget* ItemWidget, UObject* Item, bool bHovered)

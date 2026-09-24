@@ -926,6 +926,23 @@ private:
 	TSharedPtr<SWidget> FindFocusableSlateWidgetForItem(UObject* InItem) const;
 
 	/**
+	 * Applies Slate's click-focus rule to a clicked entry and returns the widget
+	 * that holds focus afterwards (null when the entry has nothing focusable):
+	 *   1. the focusable widget under the pointer, as Slate would pick it;
+	 *   2. otherwise focus Slate already placed inside the entry (a button that
+	 *      took focus on mouse down, a re-click) stays where it is;
+	 *   3. otherwise the entry stands in for the focusable ancestor Slate would
+	 *      fall back to: its preferred focus target when that can take keyboard
+	 *      focus, else its first keyboard-focusable descendant. Focus is never
+	 *      handed to a widget that cannot take it, which would pass it up to this
+	 *      view and let the view-focus policy move it to a different entry.
+	 * Also cancels any in-flight deferred scroll/focus action: the click is user
+	 * input taking over, and the action would otherwise land later and pull focus
+	 * off the clicked entry.
+	 */
+	TSharedPtr<SWidget> FocusClickedEntry(UUserWidget* EntryWidget, const TSharedPtr<SWidget>& FocusableUnderPointer);
+
+	/**
 	 * Scroll destination used when navigation must reveal an entry: the snap
 	 * destination while scroll snapping is enabled, otherwise Nearest.
 	 */

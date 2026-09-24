@@ -466,8 +466,12 @@ public:
 
 	// --- Interaction handlers (called by SVirtualFlowEntrySlot) ---
 
-	/** Routes a click or double-click from an entry slot, handling focus, expansion, selection, and events. */
-	FReply HandleItemClicked(UUserWidget* ItemWidget, UObject* Item, bool bDoubleClick);
+	/**
+	 * Routes a click or double-click from an entry slot, handling focus, expansion, selection, and events.
+	 * FocusableUnderPointer is the focusable widget Slate would focus for the click (null when unknown,
+	 * e.g. from UVirtualFlowEntryWidgetExtension::NotifyClicked).
+	 */
+	FReply HandleItemClicked(UUserWidget* ItemWidget, UObject* Item, bool bDoubleClick, TSharedPtr<SWidget> FocusableUnderPointer = nullptr);
 	/** Routes hover enter/leave from an entry slot. */
 	void HandleItemHovered(UUserWidget* ItemWidget, UObject* Item, bool bHovered);
 

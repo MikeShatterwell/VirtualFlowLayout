@@ -63,6 +63,25 @@ namespace SVirtualFlowViewHelpers
 		return Direction == EUINavigation::Down || Direction == EUINavigation::Right;
 	}
 
+	/** First keyboard-focusable widget below Root in child order (Root itself excluded). */
+	static TSharedPtr<SWidget> FindFirstKeyboardFocusableDescendant(const TSharedRef<SWidget>& Root)
+	{
+		FChildren* Children = Root->GetChildren();
+		for (int32 Index = 0; Children && Index < Children->Num(); ++Index)
+		{
+			const TSharedRef<SWidget> Child = Children->GetChildAt(Index);
+			if (Child->SupportsKeyboardFocus())
+			{
+				return Child;
+			}
+			if (TSharedPtr<SWidget> Found = FindFirstKeyboardFocusableDescendant(Child))
+			{
+				return Found;
+			}
+		}
+		return nullptr;
+	}
+
 	static FSlateRect ToAbsoluteRect(const FGeometry& Geometry)
 	{
 		const FVector2D Position = Geometry.GetAbsolutePosition();
@@ -3435,11 +3454,11 @@ FRealizedPlacedItem& SVirtualFlowView::EnsureRealizedWidget(const FVirtualFlowPl
 			TWeakObjectPtr<UUserWidget> WeakEntryWidget = Realized.WidgetObject;
 
 			SAssignNew(Realized.EntrySlot, SVirtualFlowEntrySlot)
-				.OnSlotClicked_Lambda([WeakOwner, WeakEntryWidget, WeakItem](bool bDoubleClick) -> FReply
+				.OnSlotClicked_Lambda([WeakOwner, WeakEntryWidget, WeakItem](bool bDoubleClick, TSharedPtr<SWidget> FocusableUnderPointer) -> FReply
 				{
 					if (UVirtualFlowView* Owner = WeakOwner.Get())
 					{
-						return Owner->HandleItemClicked(WeakEntryWidget.Get(), WeakItem.Get(), bDoubleClick);
+						return Owner->HandleItemClicked(WeakEntryWidget.Get(), WeakItem.Get(), bDoubleClick, FocusableUnderPointer);
 					}
 					return FReply::Unhandled();
 				})
@@ -4144,27 +4163,49 @@ TSharedPtr<SWidget> SVirtualFlowView::FindFocusableSlateWidgetForItem(UObject* I
 	}
 
 	// Fall back: walk the slot tree for the first keyboard-focusable descendant.
-	TSharedPtr<SWidget> Result;
-	TFunction<bool(TSharedRef<SWidget>)> FindFocusable = [&](TSharedRef<SWidget> Parent) -> bool
+	return SVirtualFlowViewHelpers::FindFirstKeyboardFocusableDescendant(Realized->SlotBox.ToSharedRef());
+}
+
+TSharedPtr<SWidget> SVirtualFlowView::FocusClickedEntry(UUserWidget* EntryWidget, const TSharedPtr<SWidget>& FocusableUnderPointer)
+{
+	// The click is user input taking over (as right-click panning is): a deferred
+	// scroll/focus still in flight would otherwise land later and move focus away.
+	InteractionState.PendingAction.Reset();
+
+	const TSharedPtr<SWidget> EntryRoot = (OwnerWidget.IsValid() && IsValid(EntryWidget)) ? EntryWidget->GetCachedWidget() : nullptr;
+	if (!EntryRoot.IsValid())
 	{
-		FChildren* Children = Parent->GetChildren();
-		for (int32 i = 0; i < Children->Num(); ++i)
-		{
-			TSharedRef<SWidget> Child = Children->GetChildAt(i);
-			if (Child->SupportsKeyboardFocus())
-			{
-				Result = Child;
-				return true;
-			}
-			if (FindFocusable(Child))
-			{
-				return true;
-			}
-		}
-		return false;
-	};
-	FindFocusable(Realized->SlotBox.ToSharedRef());
-	return Result;
+		return nullptr;
+	}
+
+	const uint32 UserIndex = GetOwnerSlateUserIndex();
+	FSlateApplication& SlateApp = FSlateApplication::Get();
+
+	TSharedPtr<SWidget> Target = FocusableUnderPointer;
+	if (!Target.IsValid() && (EntryRoot->HasUserFocus(UserIndex) || EntryRoot->HasUserFocusedDescendants(UserIndex)))
+	{
+		Target = SlateApp.GetUserFocusedWidget(UserIndex);
+	}
+	if (!Target.IsValid())
+	{
+		const UWidget* Preferred = OwnerWidget->GetPreferredFocusTargetForEntryWidget(EntryWidget);
+		const TSharedPtr<SWidget> PreferredSlate = IsValid(Preferred) ? Preferred->GetCachedWidget() : nullptr;
+		Target = (PreferredSlate.IsValid() && PreferredSlate->SupportsKeyboardFocus())
+			? PreferredSlate
+			: (EntryRoot->SupportsKeyboardFocus() ? EntryRoot : SVirtualFlowViewHelpers::FindFirstKeyboardFocusableDescendant(EntryRoot.ToSharedRef()));
+	}
+	if (!Target.IsValid())
+	{
+		UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] Clicked entry [%s] has no keyboard-focusable widget"),
+			__FUNCTION__, *GetNameSafe(EntryWidget));
+		return nullptr;
+	}
+
+	if (SlateApp.GetUserFocusedWidget(UserIndex) != Target)
+	{
+		SlateApp.SetUserFocus(UserIndex, Target, EFocusCause::Mouse);
+	}
+	return Target;
 }
 
 // ===========================================================================

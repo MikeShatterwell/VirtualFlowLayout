@@ -35,8 +35,12 @@
 class SVirtualFlowEntrySlot : public SCompoundWidget
 {
 public:
-	/** Fired on left-click or double-click. The bool parameter is true for double-click. */
-	DECLARE_DELEGATE_RetVal_OneParam(FReply, FOnSlotClicked, bool /*bDoubleClick*/);
+	/**
+	 * Fired on left-click or double-click. The bool parameter is true for double-click.
+	 * FocusableUnderPointer is the leaf-most keyboard-focusable widget under the pointer
+	 * inside this slot -- the widget Slate itself would focus for this click -- or null.
+	 */
+	DECLARE_DELEGATE_RetVal_TwoParams(FReply, FOnSlotClicked, bool /*bDoubleClick*/, TSharedPtr<SWidget> /*FocusableUnderPointer*/);
 
 	/** Fired when the pointer enters or leaves the slot. The bool parameter is true on enter, false on leave. */
 	DECLARE_DELEGATE_OneParam(FOnSlotHoverChanged, bool /*bHovered*/);
@@ -56,6 +60,9 @@ public:
 	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override;
 
 private:
+	/** Leaf-most keyboard-focusable widget between the pointer and this slot, from the event's routing path. */
+	TSharedPtr<SWidget> FindFocusableWidgetUnderPointer(const FPointerEvent& MouseEvent) const;
+
 	FOnSlotClicked OnSlotClicked;
 	FOnSlotHoverChanged OnSlotHoverChanged;
 };
