@@ -933,6 +933,7 @@ private:
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<UObject> LastFocusedItem;
+	/** Bumped on every focus report so the view can tell a fresh LastFocusedItem from a stale one. */
 	uint32 FocusReportSerial = 0;
 
 	/**
