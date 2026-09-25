@@ -159,6 +159,8 @@ struct FDeferredViewAction
 	int32 FocusAttempts = 0;
 	static constexpr int32 MaxFocusAttempts = 8;
 
+	bool bNavigationInitiated = false;
+
 	bool IsValid() const
 	{
 		return Type != EType::None && FocusTargetItem.IsValid();
@@ -171,6 +173,7 @@ struct FDeferredViewAction
 		Destination = EVirtualFlowScrollDestination::Nearest;
 		bFocusApplied = false;
 		FocusAttempts = 0;
+		bNavigationInitiated = false;
 	}
 };
 
@@ -202,6 +205,10 @@ struct FVirtualFlowInteractionState
 	// --- Focus-driven scroll buffer ---
 	/** The item whose entry widget held keyboard focus last tick. Used to detect focus transitions. */
 	TWeakObjectPtr<UObject> LastTickFocusedItem;
+
+	TWeakPtr<SWidget> LastTickFocusedSlateWidget;
+
+	uint32 LastSeenFocusReportSerial = 0;
 
 	/**
 	 * Item deliberately positioned by a programmatic FocusItem / FocusSection
@@ -447,7 +454,7 @@ public:
 	/** Finds a sibling item for cross-axis nested navigation (Left/Right when vertical, Up/Down when horizontal). No display-order fallback. */
 	UObject* FindSiblingForCrossAxisNavigation(UObject* CurrentItem, EUINavigation Direction) const;
 
-	/** Finds the best navigation target along the scroll direction using spatial scoring. No display-order fallback. */
+	/** Finds the best navigation target along the scroll direction using Slate's hittest-grid rule on layout rects. No display-order fallback. */
 	UObject* FindBestFocusTargetInScrollDirection(UObject* CurrentItem, EUINavigation Direction) const;
 
 private:
@@ -459,9 +466,10 @@ private:
 	FOrientedAxes Axes;
 
 	// --- Scoring constants (layout-space: Y = main/scroll axis, X = cross axis) ---
-	static constexpr float MainAxisDistanceWeight = 1000.0f;
-	static constexpr float CrossAxisOverlapBonus = 0.25f;
-	static constexpr float MinMainAxisDelta = 1.0f;
+	static constexpr float DirectionTolerance = 0.1f;
+	static constexpr float CrossAxisSweepInset = 0.5f;
+	static constexpr float CrossCoverageTieTolerance = 0.01f;
+	static constexpr float MainAxisTieTolerance = 1.0f;
 };
 
 // ---------------------------------------------------------------------------
@@ -851,6 +859,22 @@ private:
 	 * Returns nullptr if the item is not realized or has no focusable descendant.
 	 */
 	TSharedPtr<SWidget> FindFocusableSlateWidgetForItem(UObject* InItem) const;
+
+	TSharedPtr<SWidget> FocusClickedEntry(UObject* Item, UUserWidget* EntryWidget, const TSharedPtr<SWidget>& FocusableUnderPointer);
+
+	TSharedPtr<SWidget> HandleNavigationBeyondPaintedEntries(EUINavigation NavDir, TWeakObjectPtr<UObject> TargetItem);
+
+	bool IsDeferredFocusLanding() const;
+
+	UObject* ResolveFocusedItemWithinEntry(UObject* DisplayedItem, uint32 UserIndex) const;
+
+	enum class ERegisteredWidgetFocus : uint8
+	{
+		NoWidgetRegistered,
+		NotFocused,
+		Focused,
+	};
+	ERegisteredWidgetFocus GetRegisteredWidgetFocus(UObject* InItem, uint32 UserIndex) const;
 
 	// --- Realization helpers ---
 

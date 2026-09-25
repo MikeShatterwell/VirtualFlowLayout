@@ -36,7 +36,7 @@ class SVirtualFlowEntrySlot : public SCompoundWidget
 {
 public:
 	/** Fired on left-click or double-click. The bool parameter is true for double-click. */
-	DECLARE_DELEGATE_RetVal_OneParam(FReply, FOnSlotClicked, bool /*bDoubleClick*/);
+	DECLARE_DELEGATE_RetVal_TwoParams(FReply, FOnSlotClicked, bool /*bDoubleClick*/, TSharedPtr<SWidget> /*FocusableUnderPointer*/);
 
 	/** Fired when the pointer enters or leaves the slot. The bool parameter is true on enter, false on leave. */
 	DECLARE_DELEGATE_OneParam(FOnSlotHoverChanged, bool /*bHovered*/);
@@ -56,6 +56,8 @@ public:
 	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override;
 
 private:
+	TSharedPtr<SWidget> FindFocusableWidgetUnderPointer(const FPointerEvent& MouseEvent) const;
+
 	FOnSlotClicked OnSlotClicked;
 	FOnSlotHoverChanged OnSlotHoverChanged;
 };
