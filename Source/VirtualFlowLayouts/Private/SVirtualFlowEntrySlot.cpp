@@ -2,6 +2,9 @@
 
 #include "SVirtualFlowEntrySlot.h"
 
+// SlateCore
+#include <Layout/WidgetPath.h>
+
 void SVirtualFlowEntrySlot::Construct(const FArguments& InArgs)
 {
 	OnSlotClicked = InArgs._OnSlotClicked;
@@ -19,7 +22,7 @@ FReply SVirtualFlowEntrySlot::OnMouseButtonDown(const FGeometry& MyGeometry, con
 	{
 		if (OnSlotClicked.IsBound())
 		{
-			return OnSlotClicked.Execute(/*bDoubleClick*/ false);
+			return OnSlotClicked.Execute(/*bDoubleClick*/ false, FindFocusableWidgetUnderPointer(MouseEvent));
 		}
 	}
 	return FReply::Unhandled();
@@ -31,10 +34,34 @@ FReply SVirtualFlowEntrySlot::OnMouseButtonDoubleClick(const FGeometry& MyGeomet
 	{
 		if (OnSlotClicked.IsBound())
 		{
-			return OnSlotClicked.Execute(/*bDoubleClick*/ true);
+			return OnSlotClicked.Execute(/*bDoubleClick*/ true, FindFocusableWidgetUnderPointer(MouseEvent));
 		}
 	}
 	return FReply::Unhandled();
+}
+
+TSharedPtr<SWidget> SVirtualFlowEntrySlot::FindFocusableWidgetUnderPointer(const FPointerEvent& MouseEvent) const
+{
+	const FWidgetPath* EventPath = MouseEvent.GetEventPath();
+	if (EventPath == nullptr || !EventPath->IsValid())
+	{
+		return nullptr;
+	}
+
+	const TSharedRef<const SWidget> Self = AsShared();
+	for (int32 Index = EventPath->Widgets.Num() - 1; Index >= 0; --Index)
+	{
+		const TSharedRef<SWidget>& Widget = EventPath->Widgets[Index].Widget;
+		if (Widget == Self)
+		{
+			break;
+		}
+		if (Widget->SupportsKeyboardFocus())
+		{
+			return Widget;
+		}
+	}
+	return nullptr;
 }
 
 void SVirtualFlowEntrySlot::OnMouseEnter(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
