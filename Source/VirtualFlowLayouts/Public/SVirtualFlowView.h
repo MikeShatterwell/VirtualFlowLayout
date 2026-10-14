@@ -741,6 +741,9 @@ private:
 	 */
 	void ForwardPendingViewFocus();
 
+	/** Moves focus from the view itself into an entry per ViewFocusPolicy on a navigation press. Returns false when nothing was done. */
+	bool ForwardViewFocusOnNavigation();
+
 	// ------------------------------------------------------------------
 	// Refresh stage helpers
 	// ------------------------------------------------------------------
