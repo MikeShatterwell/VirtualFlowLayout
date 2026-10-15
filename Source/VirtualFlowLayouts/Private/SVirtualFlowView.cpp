@@ -2339,24 +2339,6 @@ void SVirtualFlowView::ForwardPendingViewFocus()
 	}
 }
 
-bool SVirtualFlowView::ForwardViewFocusOnNavigation()
-{
-	if (!OwnerWidget.IsValid()
-		|| OwnerWidget->GetViewFocusPolicy() == EVirtualFlowViewFocusPolicy::None
-		|| !HasUserFocus(GetOwnerSlateUserIndex()).IsSet()
-		|| InteractionState.PendingAction.IsValid()
-		|| !IsValid(ResolveViewFocusPolicyTarget()))
-	{
-		return false;
-	}
-
-	InteractionState.bPendingViewFocusForward = true;
-	InteractionState.PendingViewFocusCause = EFocusCause::Navigation;
-	ForwardPendingViewFocus();
-	InteractionState.bPendingViewFocusForward = false;
-	return !HasUserFocus(GetOwnerSlateUserIndex()).IsSet() || InteractionState.PendingAction.IsValid();
-}
-
 // ===========================================================================
 // Focus-driven scroll buffer
 //
@@ -4371,12 +4353,6 @@ FReply SVirtualFlowView::OnMouseButtonDown(const FGeometry& MyGeometry, const FP
 		return FReply::Handled().CaptureMouse(SharedThis(this));
 	}
 
-	if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
-	{
-		// User input takes over: cancel any in-flight deferred scroll/focus action
-		InteractionState.PendingAction.Reset();
-	}
-
 	return SCompoundWidget::OnMouseButtonDown(MyGeometry, MouseEvent);
 }
 
@@ -4528,11 +4504,6 @@ FNavigationReply SVirtualFlowView::OnNavigation(const FGeometry& MyGeometry, con
 	const EUINavigation NavDir = InNavigationEvent.GetNavigationType();
 	UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] NavDir=%d, UserIndex=%d"),
 		__FUNCTION__, static_cast<int32>(NavDir), InNavigationEvent.GetUserIndex());
-	if (ForwardViewFocusOnNavigation())
-	{
-		return FNavigationReply::Stop();
-	}
-
 	const bool bHandleVertical = SVirtualFlowViewHelpers::IsVerticalDirection(NavDir) && OwnerWidget->GetBridgeVirtualizedVerticalNavigation();
 	const bool bHandleHorizontal = SVirtualFlowViewHelpers::IsHorizontalDirection(NavDir) && OwnerWidget->GetBridgeVirtualizedHorizontalNavigation();
 
@@ -4808,8 +4779,7 @@ FReply SVirtualFlowView::OnFocusReceived(const FGeometry& MyGeometry, const FFoc
 	}
 
 	const EVirtualFlowViewFocusPolicy Policy = OwnerWidget->GetViewFocusPolicy();
-	// A click on empty space keeps focus on the view; redirecting would scroll back and select.
-	if (Policy == EVirtualFlowViewFocusPolicy::None || InFocusEvent.GetCause() == EFocusCause::Mouse)
+	if (Policy == EVirtualFlowViewFocusPolicy::None)
 	{
 		return FReply::Unhandled();
 	}
@@ -4873,11 +4843,6 @@ FReply SVirtualFlowView::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent&
 
 	if (NavDir != EUINavigation::Invalid)
 	{
-		if (ForwardViewFocusOnNavigation())
-		{
-			return FReply::Handled();
-		}
-
 		// This runs when no descendant returned SetNavigation, so Slate's
 		// navigation pipeline (OnNavigation -> hittest grid) was not engaged
 		// for this press. We scroll the target into view as a fallback so
