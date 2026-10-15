@@ -2341,37 +2341,20 @@ void SVirtualFlowView::ForwardPendingViewFocus()
 
 bool SVirtualFlowView::ForwardViewFocusOnNavigation()
 {
-	const uint32 UserIndex = GetOwnerSlateUserIndex();
 	if (!OwnerWidget.IsValid()
 		|| OwnerWidget->GetViewFocusPolicy() == EVirtualFlowViewFocusPolicy::None
-		|| !HasUserFocus(UserIndex).IsSet()
-		|| IsDeferredFocusLanding())
+		|| !HasUserFocus(GetOwnerSlateUserIndex()).IsSet()
+		|| InteractionState.PendingAction.IsValid()
+		|| !IsValid(ResolveViewFocusPolicyTarget()))
 	{
 		return false;
 	}
 
-	// A realized target with nothing focusable would queue a focus action that never lands.
-	UObject* TargetItem = ResolveViewFocusPolicyTarget();
-	if (!IsValid(TargetItem)
-		|| (!FindFocusableSlateWidgetForItem(TargetItem).IsValid()
-			&& (RealizedItemMap.Contains(TargetItem) || RealizedItemMap.Contains(NavigationPolicy.ResolveOwningDisplayedItem(TargetItem)))))
-	{
-		return false;
-	}
-
-	const bool bWasArmed = InteractionState.bPendingViewFocusForward;
-	const EFocusCause PreviousCause = InteractionState.PendingViewFocusCause;
 	InteractionState.bPendingViewFocusForward = true;
 	InteractionState.PendingViewFocusCause = EFocusCause::Navigation;
 	ForwardPendingViewFocus();
-
-	const bool bForwarded = !HasUserFocus(UserIndex).IsSet() || IsDeferredFocusLanding();
-	if (!bForwarded)
-	{
-		InteractionState.bPendingViewFocusForward = bWasArmed;
-		InteractionState.PendingViewFocusCause = PreviousCause;
-	}
-	return bForwarded;
+	InteractionState.bPendingViewFocusForward = false;
+	return !HasUserFocus(GetOwnerSlateUserIndex()).IsSet() || InteractionState.PendingAction.IsValid();
 }
 
 // ===========================================================================
@@ -4391,14 +4374,7 @@ FReply SVirtualFlowView::OnMouseButtonDown(const FGeometry& MyGeometry, const FP
 	if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
 		// User input takes over: cancel any in-flight deferred scroll/focus action
-		if (InteractionState.PendingAction.IsValid())
-		{
-			InteractionState.PendingAction.Reset();
-			ScrollController.ResetPhysics(true);
-			ScrollController.SetTargetOffset(ScrollController.GetOffset());
-			RequestRefresh(ERefreshStage::RefreshVisible);
-		}
-		InteractionState.bPendingViewFocusForward = false;
+		InteractionState.PendingAction.Reset();
 	}
 
 	return SCompoundWidget::OnMouseButtonDown(MyGeometry, MouseEvent);
@@ -4552,14 +4528,7 @@ FNavigationReply SVirtualFlowView::OnNavigation(const FGeometry& MyGeometry, con
 	const EUINavigation NavDir = InNavigationEvent.GetNavigationType();
 	UE_LOG(LogVirtualFlowInput, Verbose, TEXT("[%hs] NavDir=%d, UserIndex=%d"),
 		__FUNCTION__, static_cast<int32>(NavDir), InNavigationEvent.GetUserIndex());
-
-	// --- Detect simulation calls ---
-	bool bIsSimulation = false;
-#if WITH_INPUT_FLOW_DEBUGGER
-	bIsSimulation = InNavigationEvent.GetUserIndex() == UInputDebugSubsystem::SimulatedNavigationUserIndex;
-#endif
-
-	if (!bIsSimulation && ForwardViewFocusOnNavigation())
+	if (ForwardViewFocusOnNavigation())
 	{
 		return FNavigationReply::Stop();
 	}
@@ -4571,6 +4540,12 @@ FNavigationReply SVirtualFlowView::OnNavigation(const FGeometry& MyGeometry, con
 	{
 		return FNavigationReply::Escape();
 	}
+
+	// --- Detect simulation calls ---
+	bool bIsSimulation = false;
+#if WITH_INPUT_FLOW_DEBUGGER
+	bIsSimulation = InNavigationEvent.GetUserIndex() == UInputDebugSubsystem::SimulatedNavigationUserIndex;
+#endif
 
 	// --- Hold presses while a deferred focus is landing ---
 	if (!bIsSimulation && IsDeferredFocusLanding()
