@@ -808,7 +808,7 @@ void SVirtualFlowView::Construct(const FArguments& InArgs, UVirtualFlowView& InO
 		ScrollBar->SetScrollbarDisabledVisibility(EVisibility::Collapsed);
 	}
 
-#if !UE_BUILD_SHIPPING
+#if WITH_INPUT_FLOW_DEBUGGER
 	if (const UGameInstance* GameInstance = InOwnerWidget.GetGameInstance(); IsValid(GameInstance))
 	{
 		if (UInputDebugSubsystem* Subsystem = GameInstance->GetSubsystem<UInputDebugSubsystem>(); IsValid(Subsystem))
@@ -1207,7 +1207,7 @@ int32 SVirtualFlowView::OnPaint(const FPaintArgs& Args, const FGeometry& Allotte
 	return Result;
 }
 
-#if !UE_BUILD_SHIPPING
+#if WITH_INPUT_FLOW_DEBUGGER
 
 // ===========================================================================
 // Input Flow Debugger Integration
@@ -1335,7 +1335,7 @@ void SVirtualFlowView::PopulateInputFlowParams(FVirtualFlowInputFlowParams& Para
 	}
 }
 
-#endif
+#endif // WITH_INPUT_FLOW_DEBUGGER
 
 #if WITH_EDITOR
 
@@ -4544,6 +4544,13 @@ FNavigationReply SVirtualFlowView::OnNavigation(const FGeometry& MyGeometry, con
 			break;
 		}
 	}
+
+	// The view itself holds focus, e.g. after clicking an entry with nothing focusable
+	const bool bNavigatingFromView = !IsValid(CurrentItem) && HasUserFocus(OwnerUserIndex).IsSet();
+	if (bNavigatingFromView)
+	{
+		CurrentItem = OwnerWidget->GetLastFocusedItem().Get();
+	}
 	
 	if (!IsValid(CurrentItem))
 	{
@@ -4608,6 +4615,12 @@ FNavigationReply SVirtualFlowView::OnNavigation(const FGeometry& MyGeometry, con
 				return FNavigationReply::Custom(FNavigationDelegate());
 			}
 		}
+	}
+
+	if (bNavigatingFromView && !bIsSimulation)
+	{
+		return FNavigationReply::Custom(FNavigationDelegate::CreateSP(
+			this, &SVirtualFlowView::HandleNavigationBeyondPaintedEntries, TWeakObjectPtr<UObject>(TargetItem)));
 	}
 
 	// --- Target is not realized -- only scroll for main-axis navigation ---
@@ -4779,7 +4792,7 @@ FReply SVirtualFlowView::OnFocusReceived(const FGeometry& MyGeometry, const FFoc
 	}
 
 	const EVirtualFlowViewFocusPolicy Policy = OwnerWidget->GetViewFocusPolicy();
-	if (Policy == EVirtualFlowViewFocusPolicy::None)
+	if (Policy == EVirtualFlowViewFocusPolicy::None || InFocusEvent.GetCause() == EFocusCause::Mouse)
 	{
 		return FReply::Unhandled();
 	}
