@@ -808,7 +808,7 @@ void SVirtualFlowView::Construct(const FArguments& InArgs, UVirtualFlowView& InO
 		ScrollBar->SetScrollbarDisabledVisibility(EVisibility::Collapsed);
 	}
 
-#if !UE_BUILD_SHIPPING
+#if WITH_INPUT_FLOW_DEBUGGER
 	if (const UGameInstance* GameInstance = InOwnerWidget.GetGameInstance(); IsValid(GameInstance))
 	{
 		if (UInputDebugSubsystem* Subsystem = GameInstance->GetSubsystem<UInputDebugSubsystem>(); IsValid(Subsystem))
@@ -1207,7 +1207,7 @@ int32 SVirtualFlowView::OnPaint(const FPaintArgs& Args, const FGeometry& Allotte
 	return Result;
 }
 
-#if !UE_BUILD_SHIPPING
+#if WITH_INPUT_FLOW_DEBUGGER
 
 // ===========================================================================
 // Input Flow Debugger Integration
@@ -1335,7 +1335,7 @@ void SVirtualFlowView::PopulateInputFlowParams(FVirtualFlowInputFlowParams& Para
 	}
 }
 
-#endif
+#endif // WITH_INPUT_FLOW_DEBUGGER
 
 #if WITH_EDITOR
 

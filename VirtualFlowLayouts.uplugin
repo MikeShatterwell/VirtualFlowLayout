@@ -26,7 +26,8 @@
 		{
 			"Name": "InputFlowDebugger",
 			"Enabled": true,
-			"Optional": true
+			"Optional": true,
+			"TargetConfigurationDenyList": [ "Shipping" ]
 		},
 		{
 			"Name": "ModelViewViewModel",
