@@ -422,6 +422,7 @@ public:
 	float GetLineSpacing() const { return LineSpacing; }
 	EVirtualFlowOrientation GetOrientation() const { return Orientation; }
 	const TWeakObjectPtr<UObject>& GetLastFocusedItem() const { return LastFocusedItem; }
+	uint32 GetFocusReportSerial() const { return FocusReportSerial; }
 	bool GetEnableViewportProximityFeedback() const { return bEnableViewportProximityFeedback; }
 	UCurveFloat* GetViewportProximityCurve() const { return ViewportProximityCurve; }
 	bool GetAutoApplyProximityOpacity() const { return bAutoApplyProximityOpacity; }
@@ -465,7 +466,7 @@ public:
 	// --- Interaction handlers (called by SVirtualFlowEntrySlot) ---
 
 	/** Routes a click or double-click from an entry slot, handling focus, expansion, selection, and events. */
-	FReply HandleItemClicked(UUserWidget* ItemWidget, UObject* Item, bool bDoubleClick);
+	FReply HandleItemClicked(UUserWidget* ItemWidget, UObject* Item, bool bDoubleClick, TSharedPtr<SWidget> FocusableUnderPointer = nullptr);
 	/** Routes hover enter/leave from an entry slot. */
 	void HandleItemHovered(UUserWidget* ItemWidget, UObject* Item, bool bHovered);
 
@@ -932,6 +933,8 @@ private:
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<UObject> LastFocusedItem;
+	/** Bumped on every focus report so the view can tell a fresh LastFocusedItem from a stale one. */
+	uint32 FocusReportSerial = 0;
 
 	/**
 	 * Set automatically by the parent view's DiscoverAndBindChildFlowViews when this view
