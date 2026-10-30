@@ -209,6 +209,13 @@ struct FVirtualFlowItemLayout
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Virtual Flow|Placement")
 	bool bIsSectionHeader = false;
 
+	/**
+	 * When false, this item is never a scroll snap target, even if it is a depth-0 item that starts a row or
+	 * spans the full row. Only has an effect when the owning view has bEnableScrollSnapping enabled.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Virtual Flow|Placement")
+	bool bSnapTarget = false;
+
 	friend bool operator==(const FVirtualFlowItemLayout& A, const FVirtualFlowItemLayout& B)
 	{
 		return A.ColumnCount == B.ColumnCount

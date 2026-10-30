@@ -4778,7 +4778,7 @@ float SVirtualFlowView::ComputeSnapOffset(const float CurrentOffset, const EVirt
 			return false;
 		}
 		const FVirtualFlowPlacedItem& Placed = Layout.Items[SnapshotIndex];
-		return Placed.Depth == 0 && (Placed.ColumnStart == 0 || Placed.Layout.bFullRow);
+		return Placed.Layout.bSnapTarget && Placed.Depth == 0 && (Placed.ColumnStart == 0 || Placed.Layout.bFullRow);
 	};
 
 	int32 Low = 0;
@@ -4874,7 +4874,7 @@ float SVirtualFlowView::ComputeDirectionalSnapOffset(const float CurrentOffset, 
 			return false;
 		}
 		const FVirtualFlowPlacedItem& Placed = Layout.Items[SnapshotIndex];
-		return Placed.Depth == 0 && (Placed.ColumnStart == 0 || Placed.Layout.bFullRow);
+		return Placed.Layout.bSnapTarget && Placed.Depth == 0 && (Placed.ColumnStart == 0 || Placed.Layout.bFullRow);
 	};
 
 	const float ClampedCurrent = FMath::Clamp(CurrentOffset, 0.0f, GetMaxScrollOffset());
@@ -5007,7 +5007,7 @@ float SVirtualFlowView::ComputeContainingSnapOffset(const int32 TargetSnapshotIn
 			return false;
 		}
 		const FVirtualFlowPlacedItem& Placed = Layout.Items[SnapshotIndex];
-		return Placed.Depth == 0 && (Placed.ColumnStart == 0 || Placed.Layout.bFullRow);
+		return Placed.Layout.bSnapTarget && Placed.Depth == 0 && (Placed.ColumnStart == 0 || Placed.Layout.bFullRow);
 	};
 
 	// If the target itself is a snap candidate, use it directly.
