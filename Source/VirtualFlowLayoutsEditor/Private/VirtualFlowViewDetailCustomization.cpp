@@ -123,6 +123,7 @@ void FVirtualFlowViewDetailCustomization::CustomizeScrollingCategory(IDetailLayo
 	AddPropertySafe(DetailBuilder, Cat, GET_MEMBER_NAME_CHECKED(UVirtualFlowView, SmoothScrollSpeed));
 	AddPropertySafe(DetailBuilder, Cat, GET_MEMBER_NAME_CHECKED(UVirtualFlowView, bEnableScrollSnapping));
 	AddPropertySafe(DetailBuilder, Cat, GET_MEMBER_NAME_CHECKED(UVirtualFlowView, ScrollSnapDestination));
+	AddPropertySafe(DetailBuilder, Cat, GET_MEMBER_NAME_CHECKED(UVirtualFlowView, ScrollSnapDelay));
 }
 
 void FVirtualFlowViewDetailCustomization::CustomizeSelectionCategory(IDetailLayoutBuilder& DetailBuilder)

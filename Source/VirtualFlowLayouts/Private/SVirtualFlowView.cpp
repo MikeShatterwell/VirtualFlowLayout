@@ -1603,10 +1603,14 @@ void SVirtualFlowView::AdvanceScrollState(const FGeometry& AllottedGeometry, con
 		if (!ScrollController.CheckSnapStepConvergence())
 		{
 			// If no snap step is active, check whether idle snap should engage
-			bool bShouldIdleSnap = OwnerWidget->GetEnableScrollSnapping()
-				&& !InteractionState.PendingAction.IsValid()
+			const bool bScrollSettled = !InteractionState.PendingAction.IsValid()
 				&& !ScrollController.IsSnapStepInProgress()
 				&& FMath::IsNearlyEqual(ScrollController.GetOffset(), ScrollController.GetTargetOffset());
+			InteractionState.ScrollIdleTime = bScrollSettled ? InteractionState.ScrollIdleTime + InDeltaTime : 0.0f;
+
+			bool bShouldIdleSnap = OwnerWidget->GetEnableScrollSnapping()
+				&& bScrollSettled
+				&& InteractionState.ScrollIdleTime >= OwnerWidget->GetScrollSnapDelay();
 
 #if WITH_EDITOR
 			if (OwnerWidget->IsDesignTime())
@@ -1696,6 +1700,7 @@ void SVirtualFlowView::AdvanceScrollState(const FGeometry& AllottedGeometry, con
 	{
 		// Physics active -- sync target to current so smooth scroll doesn't fight the user
 		ScrollController.SetTargetOffset(ScrollController.GetOffset());
+		InteractionState.ScrollIdleTime = 0.0f;
 	}
 
 	if (InteractionState.bEntryInterpolationActive)

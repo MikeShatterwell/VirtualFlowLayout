@@ -843,10 +843,15 @@ private:
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Scrolling", meta = (EditCondition = "bEnableScrollSnapping"))
 	EVirtualFlowScrollDestination ScrollSnapDestination = EVirtualFlowScrollDestination::Top;
 
+	/** Time (seconds) the scroll must stay idle before it snaps. Set to 0 to snap as soon as scrolling stops. */
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Scrolling", meta = (EditCondition = "bEnableScrollSnapping", ClampMin = 0.0, UIMin = 0.0, UIMax = 2.0))
+	float ScrollSnapDelay = 0.0f;
+
 	float GetSectionSpacing() const { return SectionSpacing; }
 	bool GetEnableStickyHeaders() const { return bEnableStickyHeaders; }
 	bool GetEnableScrollSnapping() const { return bEnableScrollSnapping; }
 	EVirtualFlowScrollDestination GetScrollSnapDestination() const { return ScrollSnapDestination; }
+	float GetScrollSnapDelay() const { return ScrollSnapDelay; }
 
 	// --- Viewport proximity feedback ---
 

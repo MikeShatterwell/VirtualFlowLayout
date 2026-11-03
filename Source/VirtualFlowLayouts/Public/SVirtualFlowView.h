@@ -201,6 +201,8 @@ struct FVirtualFlowInteractionState
 	float LastTickDeltaTime = 0.0f;
 	uint32 TickSequence = 0;
 	bool bEntryInterpolationActive = false;
+	/** Seconds the scroll has been settled, used to delay idle snapping. */
+	float ScrollIdleTime = 0.0f;
 
 	// --- Focus-driven scroll buffer ---
 	/** The item whose entry widget held keyboard focus last tick. Used to detect focus transitions. */
