@@ -227,6 +227,9 @@ struct FVirtualFlowInteractionState
 	/** Timestamp of the last navigation action that initiated a scroll or focus command. */
 	double LastNavActionTime = 0.0;
 
+	/** Timestamp of the last wheel input that started a snap step. */
+	double LastSnapStepTime = 0.0;
+
 	// --- Focus restoration after expansion ---
 	/**
 	 * Set by UVirtualFlowView::SetItemExpanded when an entry with focus is expanded.

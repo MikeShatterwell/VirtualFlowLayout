@@ -843,10 +843,19 @@ private:
 	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Scrolling", meta = (EditCondition = "bEnableScrollSnapping"))
 	EVirtualFlowScrollDestination ScrollSnapDestination = EVirtualFlowScrollDestination::Top;
 
+	/**
+	 * Minimum time (seconds) between snap steps from scroll wheel input. Wheel ticks that arrive
+	 * sooner are ignored, so fast scrolling advances one snap point at a time instead of skipping
+	 * through the list. Set to 0 to step on every wheel tick.
+	 */
+	UPROPERTY(EditAnywhere, Category = "VirtualFlow|Scrolling", meta = (EditCondition = "bEnableScrollSnapping", ClampMin = 0.0, UIMin = 0.0, UIMax = 2.0))
+	float ScrollSnapDelay = 0.0f;
+
 	float GetSectionSpacing() const { return SectionSpacing; }
 	bool GetEnableStickyHeaders() const { return bEnableStickyHeaders; }
 	bool GetEnableScrollSnapping() const { return bEnableScrollSnapping; }
 	EVirtualFlowScrollDestination GetScrollSnapDestination() const { return ScrollSnapDestination; }
+	float GetScrollSnapDelay() const { return ScrollSnapDelay; }
 
 	// --- Viewport proximity feedback ---
 
