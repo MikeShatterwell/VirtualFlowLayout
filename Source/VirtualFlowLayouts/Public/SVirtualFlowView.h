@@ -355,6 +355,8 @@ struct FViewportState
 	float Height = 0.0f;
 	float ContentCrossExtent = 0.0f;
 	float LastMeasuredContentCrossExtent = -1.0f;
+	/** Main extent the last layout clamped entries to, or -1 when the engine does not clamp. */
+	float LastLayoutClampMainExtent = -1.0f;
 	float PrepassLayoutScale = 1.0f;
 };
 
