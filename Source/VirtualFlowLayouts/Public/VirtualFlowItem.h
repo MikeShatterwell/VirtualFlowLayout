@@ -241,7 +241,8 @@ struct FVirtualFlowItemLayout
 			&& A.bToggleExpansionOnClick == B.bToggleExpansionOnClick
 			&& A.bLockExpansion == B.bLockExpansion
 			&& A.bStickyHeader == B.bStickyHeader
-			&& A.bIsSectionHeader == B.bIsSectionHeader;
+			&& A.bIsSectionHeader == B.bIsSectionHeader
+			&& A.bSnapTarget == B.bSnapTarget;
 	}
 };
 
