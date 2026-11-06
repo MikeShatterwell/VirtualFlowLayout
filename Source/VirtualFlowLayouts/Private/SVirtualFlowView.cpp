@@ -3657,15 +3657,31 @@ FRealizedPlacedItem& SVirtualFlowView::EnsureRealizedWidget(const FVirtualFlowPl
 		}
 	}
 
+	// Entries sized to the viewport fill their slot along the main axis
+	FVirtualFlowItemLayout EntryLayout = PlacedItem.Layout;
+	if (Viewport.LastLayoutEntryMainExtent >= 0.0f)
+	{
+		if (Axes.bHorizontal)
+		{
+			EntryLayout.EntryHorizontalAlignment = HAlign_Fill;
+			EntryLayout.EntryMinWidth = EntryLayout.EntryMaxWidth = 0.0f;
+		}
+		else
+		{
+			EntryLayout.EntryVerticalAlignment = VAlign_Fill;
+			EntryLayout.EntryMinHeight = EntryLayout.EntryMaxHeight = 0.0f;
+		}
+	}
+
 	if (Realized.EntryContentBox.IsValid())
 	{
 		const bool bEntryLayoutChanged =
-			Realized.AppliedEntryHorizontalAlignment != PlacedItem.Layout.EntryHorizontalAlignment
-			|| Realized.AppliedEntryVerticalAlignment != PlacedItem.Layout.EntryVerticalAlignment
-			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMinWidth, PlacedItem.Layout.EntryMinWidth)
-			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMaxWidth, PlacedItem.Layout.EntryMaxWidth)
-			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMinHeight, PlacedItem.Layout.EntryMinHeight)
-			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMaxHeight, PlacedItem.Layout.EntryMaxHeight);
+			Realized.AppliedEntryHorizontalAlignment != EntryLayout.EntryHorizontalAlignment
+			|| Realized.AppliedEntryVerticalAlignment != EntryLayout.EntryVerticalAlignment
+			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMinWidth, EntryLayout.EntryMinWidth)
+			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMaxWidth, EntryLayout.EntryMaxWidth)
+			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMinHeight, EntryLayout.EntryMinHeight)
+			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMaxHeight, EntryLayout.EntryMaxHeight);
 		if (bEntryLayoutChanged)
 		{
 			if (!Realized.bNeedsMeasurement)
@@ -3674,21 +3690,21 @@ FRealizedPlacedItem& SVirtualFlowView::EnsureRealizedWidget(const FVirtualFlowPl
 				++Realization.PendingMeasurementCount;
 			}
 
-			Realized.EntryContentBox->SetHAlign(PlacedItem.Layout.EntryHorizontalAlignment);
-			Realized.EntryContentBox->SetVAlign(PlacedItem.Layout.EntryVerticalAlignment);
+			Realized.EntryContentBox->SetHAlign(EntryLayout.EntryHorizontalAlignment);
+			Realized.EntryContentBox->SetVAlign(EntryLayout.EntryVerticalAlignment);
 			Realized.EntryContentBox->SetWidthOverride(FOptionalSize());
 			Realized.EntryContentBox->SetHeightOverride(FOptionalSize());
-			Realized.EntryContentBox->SetMinDesiredWidth(ToOptionalSize(PlacedItem.Layout.EntryMinWidth));
-			Realized.EntryContentBox->SetMaxDesiredWidth(ToOptionalSize(PlacedItem.Layout.EntryMaxWidth));
-			Realized.EntryContentBox->SetMinDesiredHeight(ToOptionalSize(PlacedItem.Layout.EntryMinHeight));
-			Realized.EntryContentBox->SetMaxDesiredHeight(ToOptionalSize(PlacedItem.Layout.EntryMaxHeight));
+			Realized.EntryContentBox->SetMinDesiredWidth(ToOptionalSize(EntryLayout.EntryMinWidth));
+			Realized.EntryContentBox->SetMaxDesiredWidth(ToOptionalSize(EntryLayout.EntryMaxWidth));
+			Realized.EntryContentBox->SetMinDesiredHeight(ToOptionalSize(EntryLayout.EntryMinHeight));
+			Realized.EntryContentBox->SetMaxDesiredHeight(ToOptionalSize(EntryLayout.EntryMaxHeight));
 
-			Realized.AppliedEntryHorizontalAlignment = PlacedItem.Layout.EntryHorizontalAlignment;
-			Realized.AppliedEntryVerticalAlignment = PlacedItem.Layout.EntryVerticalAlignment;
-			Realized.AppliedEntryMinWidth = PlacedItem.Layout.EntryMinWidth;
-			Realized.AppliedEntryMaxWidth = PlacedItem.Layout.EntryMaxWidth;
-			Realized.AppliedEntryMinHeight = PlacedItem.Layout.EntryMinHeight;
-			Realized.AppliedEntryMaxHeight = PlacedItem.Layout.EntryMaxHeight;
+			Realized.AppliedEntryHorizontalAlignment = EntryLayout.EntryHorizontalAlignment;
+			Realized.AppliedEntryVerticalAlignment = EntryLayout.EntryVerticalAlignment;
+			Realized.AppliedEntryMinWidth = EntryLayout.EntryMinWidth;
+			Realized.AppliedEntryMaxWidth = EntryLayout.EntryMaxWidth;
+			Realized.AppliedEntryMinHeight = EntryLayout.EntryMinHeight;
+			Realized.AppliedEntryMaxHeight = EntryLayout.EntryMaxHeight;
 		}
 	}
 
