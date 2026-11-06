@@ -1553,11 +1553,11 @@ void SVirtualFlowView::UpdateViewportMetrics(const FGeometry& AllottedGeometry)
 		InvalidateMeasurementsForCrossExtentChange();
 	}
 
-	// Entries clamped to the viewport need a new layout when the main extent changes
-	if (Viewport.LastLayoutClampMainExtent >= 0.0f
-		&& FMath::Abs(GetViewportMainExtent() - Viewport.LastLayoutClampMainExtent) > CrossExtentChangeTolerance)
+	// Entries sized to the viewport need a new layout when the main extent changes
+	if (Viewport.LastLayoutEntryMainExtent >= 0.0f
+		&& FMath::Abs(GetViewportMainExtent() - Viewport.LastLayoutEntryMainExtent) > CrossExtentChangeTolerance)
 	{
-		Viewport.LastLayoutClampMainExtent = GetViewportMainExtent();
+		Viewport.LastLayoutEntryMainExtent = GetViewportMainExtent();
 		RequestRefresh(ERefreshStage::RebuildLayout | ERefreshStage::RefreshVisible);
 	}
 }
@@ -2768,8 +2768,11 @@ void SVirtualFlowView::BuildLayoutSnapshot(FLayoutRebuildContext& Context)
 	BuildContext.PreviousSnapshot = Context.PreviousSnapshotPtr;
 	BuildContext.MeasuredItemHeights = &LayoutCache.MeasuredItemHeights;
 	BuildContext.ClassHeightStats = &LayoutCache.ClassHeightStats;
-	BuildContext.MaxEntryMainExtent = Engine->bClampEntriesToViewport ? GetViewportMainExtent() : 0.0f;
-	Viewport.LastLayoutClampMainExtent = Engine->bClampEntriesToViewport ? BuildContext.MaxEntryMainExtent : -1.0f;
+	// Leave out the main-axis content padding so a single entry fits without making the view scrollable
+	BuildContext.EntryMainExtentOverride = Engine->bSizeEntriesToViewport
+		? FMath::Max(1.0f, GetViewportMainExtent() - GetMainAxisStartPadding() - GetMainAxisEndPadding())
+		: 0.0f;
+	Viewport.LastLayoutEntryMainExtent = Engine->bSizeEntriesToViewport ? GetViewportMainExtent() : -1.0f;
 
 	Engine->BuildLayout(FlattenedModel.DisplayItems, BuildContext, LayoutCache.CurrentLayout);
 }
@@ -3430,6 +3433,9 @@ bool SVirtualFlowView::MeasureRealizedItems()
 
 		// Unconstrain the main-axis dimension before prepass to measure natural extent.
 		// Vertical: main axis = screen Y (HeightOverride), Horizontal: main axis = screen X (WidthOverride).
+		// Under global invalidation Tick runs on the fast path, where SlatePrepass is skipped unless the
+		// widget is flagged, so desired sizes would be stale.
+		Realized.SlotBox->Invalidate(EInvalidateWidgetReason::Prepass);
 		if (Axes.bHorizontal)
 		{
 			Realized.SlotBox->SetWidthOverride(FOptionalSize());
@@ -3651,15 +3657,31 @@ FRealizedPlacedItem& SVirtualFlowView::EnsureRealizedWidget(const FVirtualFlowPl
 		}
 	}
 
+	// Entries sized to the viewport fill their slot along the main axis
+	FVirtualFlowItemLayout EntryLayout = PlacedItem.Layout;
+	if (Viewport.LastLayoutEntryMainExtent >= 0.0f)
+	{
+		if (Axes.bHorizontal)
+		{
+			EntryLayout.EntryHorizontalAlignment = HAlign_Fill;
+			EntryLayout.EntryMinWidth = EntryLayout.EntryMaxWidth = 0.0f;
+		}
+		else
+		{
+			EntryLayout.EntryVerticalAlignment = VAlign_Fill;
+			EntryLayout.EntryMinHeight = EntryLayout.EntryMaxHeight = 0.0f;
+		}
+	}
+
 	if (Realized.EntryContentBox.IsValid())
 	{
 		const bool bEntryLayoutChanged =
-			Realized.AppliedEntryHorizontalAlignment != PlacedItem.Layout.EntryHorizontalAlignment
-			|| Realized.AppliedEntryVerticalAlignment != PlacedItem.Layout.EntryVerticalAlignment
-			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMinWidth, PlacedItem.Layout.EntryMinWidth)
-			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMaxWidth, PlacedItem.Layout.EntryMaxWidth)
-			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMinHeight, PlacedItem.Layout.EntryMinHeight)
-			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMaxHeight, PlacedItem.Layout.EntryMaxHeight);
+			Realized.AppliedEntryHorizontalAlignment != EntryLayout.EntryHorizontalAlignment
+			|| Realized.AppliedEntryVerticalAlignment != EntryLayout.EntryVerticalAlignment
+			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMinWidth, EntryLayout.EntryMinWidth)
+			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMaxWidth, EntryLayout.EntryMaxWidth)
+			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMinHeight, EntryLayout.EntryMinHeight)
+			|| !FMath::IsNearlyEqual(Realized.AppliedEntryMaxHeight, EntryLayout.EntryMaxHeight);
 		if (bEntryLayoutChanged)
 		{
 			if (!Realized.bNeedsMeasurement)
@@ -3668,21 +3690,21 @@ FRealizedPlacedItem& SVirtualFlowView::EnsureRealizedWidget(const FVirtualFlowPl
 				++Realization.PendingMeasurementCount;
 			}
 
-			Realized.EntryContentBox->SetHAlign(PlacedItem.Layout.EntryHorizontalAlignment);
-			Realized.EntryContentBox->SetVAlign(PlacedItem.Layout.EntryVerticalAlignment);
+			Realized.EntryContentBox->SetHAlign(EntryLayout.EntryHorizontalAlignment);
+			Realized.EntryContentBox->SetVAlign(EntryLayout.EntryVerticalAlignment);
 			Realized.EntryContentBox->SetWidthOverride(FOptionalSize());
 			Realized.EntryContentBox->SetHeightOverride(FOptionalSize());
-			Realized.EntryContentBox->SetMinDesiredWidth(ToOptionalSize(PlacedItem.Layout.EntryMinWidth));
-			Realized.EntryContentBox->SetMaxDesiredWidth(ToOptionalSize(PlacedItem.Layout.EntryMaxWidth));
-			Realized.EntryContentBox->SetMinDesiredHeight(ToOptionalSize(PlacedItem.Layout.EntryMinHeight));
-			Realized.EntryContentBox->SetMaxDesiredHeight(ToOptionalSize(PlacedItem.Layout.EntryMaxHeight));
+			Realized.EntryContentBox->SetMinDesiredWidth(ToOptionalSize(EntryLayout.EntryMinWidth));
+			Realized.EntryContentBox->SetMaxDesiredWidth(ToOptionalSize(EntryLayout.EntryMaxWidth));
+			Realized.EntryContentBox->SetMinDesiredHeight(ToOptionalSize(EntryLayout.EntryMinHeight));
+			Realized.EntryContentBox->SetMaxDesiredHeight(ToOptionalSize(EntryLayout.EntryMaxHeight));
 
-			Realized.AppliedEntryHorizontalAlignment = PlacedItem.Layout.EntryHorizontalAlignment;
-			Realized.AppliedEntryVerticalAlignment = PlacedItem.Layout.EntryVerticalAlignment;
-			Realized.AppliedEntryMinWidth = PlacedItem.Layout.EntryMinWidth;
-			Realized.AppliedEntryMaxWidth = PlacedItem.Layout.EntryMaxWidth;
-			Realized.AppliedEntryMinHeight = PlacedItem.Layout.EntryMinHeight;
-			Realized.AppliedEntryMaxHeight = PlacedItem.Layout.EntryMaxHeight;
+			Realized.AppliedEntryHorizontalAlignment = EntryLayout.EntryHorizontalAlignment;
+			Realized.AppliedEntryVerticalAlignment = EntryLayout.EntryVerticalAlignment;
+			Realized.AppliedEntryMinWidth = EntryLayout.EntryMinWidth;
+			Realized.AppliedEntryMaxWidth = EntryLayout.EntryMaxWidth;
+			Realized.AppliedEntryMinHeight = EntryLayout.EntryMinHeight;
+			Realized.AppliedEntryMaxHeight = EntryLayout.EntryMaxHeight;
 		}
 	}
 
@@ -3872,7 +3894,7 @@ void SVirtualFlowView::UpdateScrollbar() const
 	const float MainExtent = GetViewportMainExtent();
 	float OffsetFraction = 0.0f;
 	float ThumbFraction = 1.0f;
-	if (ContentMainExtent > KINDA_SMALL_NUMBER && MainExtent < ContentMainExtent)
+	if (ContentMainExtent > KINDA_SMALL_NUMBER && MainExtent + 0.5f < ContentMainExtent)
 	{
 		const float MaxScrollOffset = GetMaxScrollOffset();
 		ThumbFraction = FMath::Clamp(MainExtent / ContentMainExtent, 0.0f, 1.0f);
