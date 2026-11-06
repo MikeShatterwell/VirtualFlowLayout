@@ -2768,8 +2768,11 @@ void SVirtualFlowView::BuildLayoutSnapshot(FLayoutRebuildContext& Context)
 	BuildContext.PreviousSnapshot = Context.PreviousSnapshotPtr;
 	BuildContext.MeasuredItemHeights = &LayoutCache.MeasuredItemHeights;
 	BuildContext.ClassHeightStats = &LayoutCache.ClassHeightStats;
-	BuildContext.EntryMainExtentOverride = Engine->bSizeEntriesToViewport ? GetViewportMainExtent() : 0.0f;
-	Viewport.LastLayoutEntryMainExtent = Engine->bSizeEntriesToViewport ? BuildContext.EntryMainExtentOverride : -1.0f;
+	// Leave out the main-axis content padding so a single entry fits without making the view scrollable
+	BuildContext.EntryMainExtentOverride = Engine->bSizeEntriesToViewport
+		? FMath::Max(1.0f, GetViewportMainExtent() - GetMainAxisStartPadding() - GetMainAxisEndPadding())
+		: 0.0f;
+	Viewport.LastLayoutEntryMainExtent = Engine->bSizeEntriesToViewport ? GetViewportMainExtent() : -1.0f;
 
 	Engine->BuildLayout(FlattenedModel.DisplayItems, BuildContext, LayoutCache.CurrentLayout);
 }
@@ -3875,7 +3878,7 @@ void SVirtualFlowView::UpdateScrollbar() const
 	const float MainExtent = GetViewportMainExtent();
 	float OffsetFraction = 0.0f;
 	float ThumbFraction = 1.0f;
-	if (ContentMainExtent > KINDA_SMALL_NUMBER && MainExtent < ContentMainExtent)
+	if (ContentMainExtent > KINDA_SMALL_NUMBER && MainExtent + 0.5f < ContentMainExtent)
 	{
 		const float MaxScrollOffset = GetMaxScrollOffset();
 		ThumbFraction = FMath::Clamp(MainExtent / ContentMainExtent, 0.0f, 1.0f);
