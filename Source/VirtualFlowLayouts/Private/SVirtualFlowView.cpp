@@ -1552,6 +1552,14 @@ void SVirtualFlowView::UpdateViewportMetrics(const FGeometry& AllottedGeometry)
 		Viewport.LastMeasuredContentCrossExtent = Viewport.ContentCrossExtent;
 		InvalidateMeasurementsForCrossExtentChange();
 	}
+
+	// Entries clamped to the viewport need a new layout when the main extent changes
+	if (Viewport.LastLayoutClampMainExtent >= 0.0f
+		&& FMath::Abs(GetViewportMainExtent() - Viewport.LastLayoutClampMainExtent) > CrossExtentChangeTolerance)
+	{
+		Viewport.LastLayoutClampMainExtent = GetViewportMainExtent();
+		RequestRefresh(ERefreshStage::RebuildLayout | ERefreshStage::RefreshVisible);
+	}
 }
 
 void SVirtualFlowView::AdvanceScrollState(const FGeometry& AllottedGeometry, const float InDeltaTime)
@@ -2760,6 +2768,8 @@ void SVirtualFlowView::BuildLayoutSnapshot(FLayoutRebuildContext& Context)
 	BuildContext.PreviousSnapshot = Context.PreviousSnapshotPtr;
 	BuildContext.MeasuredItemHeights = &LayoutCache.MeasuredItemHeights;
 	BuildContext.ClassHeightStats = &LayoutCache.ClassHeightStats;
+	BuildContext.MaxEntryMainExtent = Engine->bClampEntriesToViewport ? GetViewportMainExtent() : 0.0f;
+	Viewport.LastLayoutClampMainExtent = Engine->bClampEntriesToViewport ? BuildContext.MaxEntryMainExtent : -1.0f;
 
 	Engine->BuildLayout(FlattenedModel.DisplayItems, BuildContext, LayoutCache.CurrentLayout);
 }

@@ -191,6 +191,10 @@ struct FVirtualFlowLayoutBuildContext
 	UPROPERTY(BlueprintReadWrite, Category = "Virtual Flow")
 	int32 TrackCount = 1;
 
+	/** Largest main-axis extent an entry may take, including its slot margin. 0 means no limit. */
+	UPROPERTY(BlueprintReadWrite, Category = "Virtual Flow")
+	float MaxEntryMainExtent = 0.0f;
+
 	const FVirtualFlowLayoutSnapshot* PreviousSnapshot = nullptr;
 	const TMap<TWeakObjectPtr<UObject>, float>* MeasuredItemHeights = nullptr;
 	const TMap<TWeakObjectPtr<const UClass>, FVirtualFlowHeightStats>* ClassHeightStats = nullptr;
@@ -238,7 +242,18 @@ public:
 	FText GetDisplayName() const;
 	virtual FText GetDisplayName_Implementation() const { return FText::FromString(GetClass()->GetName()); }
 
+	/**
+	 * If true, entries larger than the view's visible area along the scroll axis are shrunk to fit it.
+	 * For example, an 800-unit-tall entry in a 500-unit-tall vertical view is laid out 500 units tall.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Layout")
+	bool bClampEntriesToViewport = false;
+
 protected:
+	static float ClampToMaxEntryExtent(const float Height, const FVirtualFlowLayoutBuildContext& Context)
+	{
+		return Context.MaxEntryMainExtent > 0.0f ? FMath::Min(Height, Context.MaxEntryMainExtent) : Height;
+	}
 	static float ComputeTrackWidth(const float AvailableWidth, const int32 TrackCount, const float CrossAxisSpacing);
 	static int32 ResolveSpan(const FVirtualFlowItemLayout& Layout, int32 TrackCount);
 	static float EstimatePaddedHeight(const FVirtualFlowDisplayItem& Item, const float ItemWidth, const FVirtualFlowLayoutBuildContext& Context, EVirtualFlowHeightSource* OutHeightSource = nullptr);
