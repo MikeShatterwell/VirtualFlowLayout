@@ -3430,6 +3430,9 @@ bool SVirtualFlowView::MeasureRealizedItems()
 
 		// Unconstrain the main-axis dimension before prepass to measure natural extent.
 		// Vertical: main axis = screen Y (HeightOverride), Horizontal: main axis = screen X (WidthOverride).
+		// Under global invalidation Tick runs on the fast path, where SlatePrepass is skipped unless the
+		// widget is flagged, so desired sizes would be stale.
+		Realized.SlotBox->Invalidate(EInvalidateWidgetReason::Prepass);
 		if (Axes.bHorizontal)
 		{
 			Realized.SlotBox->SetWidthOverride(FOptionalSize());
