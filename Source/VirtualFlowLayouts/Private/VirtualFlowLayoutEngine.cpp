@@ -122,12 +122,12 @@ float UVirtualFlowLayoutEngine::EstimatePaddedHeight(const FVirtualFlowDisplayIt
 	{
 	case EVirtualFlowItemHeightMode::SpecificHeight:
 		if (OutHeightSource) { *OutHeightSource = EVirtualFlowHeightSource::SpecificHeight; }
-		return ClampToMaxEntryExtent(Layout.Height + PadV, Context);
+		return ApplyEntryMainExtentOverride(Layout.Height + PadV, Context);
 	case EVirtualFlowItemHeightMode::AspectRatio:
 		if (Layout.AspectRatio > KINDA_SMALL_NUMBER)
 		{
 			if (OutHeightSource) { *OutHeightSource = EVirtualFlowHeightSource::AspectRatio; }
-			return ClampToMaxEntryExtent((ContentWidth / Layout.AspectRatio) + PadV, Context);
+			return ApplyEntryMainExtentOverride((ContentWidth / Layout.AspectRatio) + PadV, Context);
 		}
 		break;
 	default:
@@ -140,7 +140,7 @@ float UVirtualFlowLayoutEngine::EstimatePaddedHeight(const FVirtualFlowDisplayIt
 		if (const float* Measured = Context.MeasuredItemHeights->Find(Item.Item))
 		{
 			if (OutHeightSource) { *OutHeightSource = EVirtualFlowHeightSource::Measured; }
-			return ClampToMaxEntryExtent(*Measured + PadV, Context);
+			return ApplyEntryMainExtentOverride(*Measured + PadV, Context);
 		}
 	}
 
@@ -152,13 +152,13 @@ float UVirtualFlowLayoutEngine::EstimatePaddedHeight(const FVirtualFlowDisplayIt
 			if (Stats->SampleCount > 0)
 			{
 				if (OutHeightSource) { *OutHeightSource = EVirtualFlowHeightSource::ClassAverage; }
-				return ClampToMaxEntryExtent(Stats->Average + PadV, Context);
+				return ApplyEntryMainExtentOverride(Stats->Average + PadV, Context);
 			}
 		}
 	}
 
 	if (OutHeightSource) { *OutHeightSource = EVirtualFlowHeightSource::DefaultEstimate; }
-	return ClampToMaxEntryExtent(Context.DefaultEstimatedHeight + PadV, Context);
+	return ApplyEntryMainExtentOverride(Context.DefaultEstimatedHeight + PadV, Context);
 }
 
 void UVirtualFlowLayoutEngine::FinalizeSnapshot(FVirtualFlowLayoutSnapshot& InOutSnapshot)
@@ -446,7 +446,7 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 				? HeightDrivenRowSpan * RequestedRowSpan
 				: HeightDrivenRowSpan;
 			const float GridSnappedHeight = RowsToHeight(EffectiveRowSpan, CellHeight, Context.MainAxisSpacing);
-			const float ItemHeight = ClampToMaxEntryExtent(bIsStrictHeight
+			const float ItemHeight = ApplyEntryMainExtentOverride(bIsStrictHeight
 							? EstimatedHeight 
 							: FMath::Max(EstimatedHeight, GridSnappedHeight), Context);
 
@@ -491,7 +491,7 @@ void USectionedBlockGridLayoutEngine::BuildLayout_Implementation(
 			: HeightDrivenRowSpan;
 
 		const float GridSnappedHeight = RowsToHeight(EffectiveRowSpan, CellHeight, Context.MainAxisSpacing);
-		const float ItemHeight = ClampToMaxEntryExtent(bIsStrictHeight ? EstimatedHeight : FMath::Max(EstimatedHeight, GridSnappedHeight), Context);
+		const float ItemHeight = ApplyEntryMainExtentOverride(bIsStrictHeight ? EstimatedHeight : FMath::Max(EstimatedHeight, GridSnappedHeight), Context);
 		
 		int32 LocalRow = 0;
 		int32 LocalColumn = 0;
@@ -691,7 +691,7 @@ void UTileLayoutEngine::BuildLayout_Implementation(
 		{
 			HeightSource = EVirtualFlowHeightSource::SpecificHeight;
 		}
-		const float ItemHeight = ClampToMaxEntryExtent((BaseItemHeight * RSpan) + Context.MainAxisSpacing * FMath::Max(0, RSpan - 1), Context);
+		const float ItemHeight = ApplyEntryMainExtentOverride((BaseItemHeight * RSpan) + Context.MainAxisSpacing * FMath::Max(0, RSpan - 1), Context);
 
 		// Calculate precise X based on the current column
 		const float ItemX = CurrentCol * (ComputedWidth + Context.CrossAxisSpacing);

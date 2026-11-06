@@ -191,9 +191,9 @@ struct FVirtualFlowLayoutBuildContext
 	UPROPERTY(BlueprintReadWrite, Category = "Virtual Flow")
 	int32 TrackCount = 1;
 
-	/** Largest main-axis extent an entry may take, including its slot margin. 0 means no limit. */
+	/** Main-axis extent every entry is given, including its slot margin. 0 leaves entries at their own size. */
 	UPROPERTY(BlueprintReadWrite, Category = "Virtual Flow")
-	float MaxEntryMainExtent = 0.0f;
+	float EntryMainExtentOverride = 0.0f;
 
 	const FVirtualFlowLayoutSnapshot* PreviousSnapshot = nullptr;
 	const TMap<TWeakObjectPtr<UObject>, float>* MeasuredItemHeights = nullptr;
@@ -243,16 +243,16 @@ public:
 	virtual FText GetDisplayName_Implementation() const { return FText::FromString(GetClass()->GetName()); }
 
 	/**
-	 * If true, entries larger than the view's visible area along the scroll axis are shrunk to fit it.
-	 * For example, an 800-unit-tall entry in a 500-unit-tall vertical view is laid out 500 units tall.
+	 * If true, every entry is sized to the view's visible extent along the scroll axis, whatever its own size.
+	 * For example, in a 500-unit-tall vertical view both an 800-unit and a 300-unit entry are laid out 500 units tall.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Layout")
-	bool bClampEntriesToViewport = false;
+	bool bSizeEntriesToViewport = false;
 
 protected:
-	static float ClampToMaxEntryExtent(const float Height, const FVirtualFlowLayoutBuildContext& Context)
+	static float ApplyEntryMainExtentOverride(const float Height, const FVirtualFlowLayoutBuildContext& Context)
 	{
-		return Context.MaxEntryMainExtent > 0.0f ? FMath::Min(Height, Context.MaxEntryMainExtent) : Height;
+		return Context.EntryMainExtentOverride > 0.0f ? Context.EntryMainExtentOverride : Height;
 	}
 	static float ComputeTrackWidth(const float AvailableWidth, const int32 TrackCount, const float CrossAxisSpacing);
 	static int32 ResolveSpan(const FVirtualFlowItemLayout& Layout, int32 TrackCount);

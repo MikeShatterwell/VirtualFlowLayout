@@ -1553,11 +1553,11 @@ void SVirtualFlowView::UpdateViewportMetrics(const FGeometry& AllottedGeometry)
 		InvalidateMeasurementsForCrossExtentChange();
 	}
 
-	// Entries clamped to the viewport need a new layout when the main extent changes
-	if (Viewport.LastLayoutClampMainExtent >= 0.0f
-		&& FMath::Abs(GetViewportMainExtent() - Viewport.LastLayoutClampMainExtent) > CrossExtentChangeTolerance)
+	// Entries sized to the viewport need a new layout when the main extent changes
+	if (Viewport.LastLayoutEntryMainExtent >= 0.0f
+		&& FMath::Abs(GetViewportMainExtent() - Viewport.LastLayoutEntryMainExtent) > CrossExtentChangeTolerance)
 	{
-		Viewport.LastLayoutClampMainExtent = GetViewportMainExtent();
+		Viewport.LastLayoutEntryMainExtent = GetViewportMainExtent();
 		RequestRefresh(ERefreshStage::RebuildLayout | ERefreshStage::RefreshVisible);
 	}
 }
@@ -2768,8 +2768,8 @@ void SVirtualFlowView::BuildLayoutSnapshot(FLayoutRebuildContext& Context)
 	BuildContext.PreviousSnapshot = Context.PreviousSnapshotPtr;
 	BuildContext.MeasuredItemHeights = &LayoutCache.MeasuredItemHeights;
 	BuildContext.ClassHeightStats = &LayoutCache.ClassHeightStats;
-	BuildContext.MaxEntryMainExtent = Engine->bClampEntriesToViewport ? GetViewportMainExtent() : 0.0f;
-	Viewport.LastLayoutClampMainExtent = Engine->bClampEntriesToViewport ? BuildContext.MaxEntryMainExtent : -1.0f;
+	BuildContext.EntryMainExtentOverride = Engine->bSizeEntriesToViewport ? GetViewportMainExtent() : 0.0f;
+	Viewport.LastLayoutEntryMainExtent = Engine->bSizeEntriesToViewport ? BuildContext.EntryMainExtentOverride : -1.0f;
 
 	Engine->BuildLayout(FlattenedModel.DisplayItems, BuildContext, LayoutCache.CurrentLayout);
 }
